@@ -4,11 +4,11 @@ import (
 	"bufio"
 	"fmt"
 	"net"
+	"net/netip"
 	"strconv"
 	"sync"
 
 	"github.com/SLP25/ESR/internal/packet"
-	"github.com/SLP25/ESR/internal/serialize"
 )
 
 
@@ -29,19 +29,19 @@ type Service struct {
 	finished sync.WaitGroup
 }
 
-func (this *Service) SendUDP(packet packet.Packet, addr net.Addr) {
-	this.udpServer.WriteTo(serialize.Serialize(packet), addr)
+func (this *Service) SendUDP(p packet.Packet, address netip.AddrPort) {
+	this.udpServer.WriteTo(packet.Serialize(p), addr{network: "udp", addrport: address})
 }
 
 func (this *Service) Run(tcpPort int, udpPort int) error { //make ports optional (in case only one listener is needed)
 
 	this.finished.Add(1)
+	var err error
 
-	s1, err := net.Listen("tcp", ":" + strconv.Itoa(tcpPort))
+	this.tcpServer, err = net.Listen("tcp", ":" + strconv.Itoa(tcpPort))
 	if err != nil {
 		return err
 	}
-	this.tcpServer = s1
 	defer this.tcpServer.Close()
 	go this.handleTCPServer()
 	
@@ -83,7 +83,7 @@ func (this *Service) handleConnection(c net.Conn) {
 				return
 		}
 
-		packet := serialize.Deserialize(netData)
+		packet := packet.Deserialize(netData)
 		this.Handler.Handle(TCPMessage{Packet: packet, conn: c})
 	}
 }
@@ -97,7 +97,14 @@ func (this *Service) handleUDPServer() {
 			return
 		}
 
-		packet := serialize.Deserialize(buf) //TODO: confirmar se isto nao está a passar bytes vazios
-		this.Handler.Handle(UDPMessage{Packet: packet, Addr: addr, udpServer: this.udpServer})
+		addrport, err := netip.ParseAddrPort(addr.String())
+		if err != nil {
+			fmt.Println(err) //TODO: error handling
+			return
+		}
+
+		packet := packet.Deserialize(buf) //TODO: confirmar se isto nao está a passar bytes vazios
+
+		this.Handler.Handle(UDPMessage{Packet: packet, Addr: addrport, udpServer: this.udpServer})
 	}
 }

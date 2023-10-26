@@ -1,17 +1,17 @@
 package packet
 
 import (
-	"net"
+	"net/netip"
 
 	"github.com/SLP25/ESR/internal/utils"
 )
 
 //any -> bootstrapper
 type StartupRequest struct {
-	service utils.ServiceType
+	Service utils.ServiceType
 }
 
 //bootstrapper -> any
 type StartupResponse struct {
-	RP net.Addr
+	RP netip.Addr
 }
