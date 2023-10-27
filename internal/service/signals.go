@@ -27,7 +27,7 @@ type UDPMessage struct {
 	udpServer net.PacketConn
 }
 
-func (this UDPMessage) getPacket() packet.Packet {
+func (this UDPMessage) GetPacket() packet.Packet {
 	return this.Packet
 }
 
@@ -35,7 +35,7 @@ func (this UDPMessage) getAddr() netip.AddrPort {
 	return this.Addr
 }
 
-func (this UDPMessage) sendResponse(p packet.Packet) error {
+func (this UDPMessage) SendResponse(p packet.Packet) error {
 	_, err := this.udpServer.WriteTo(packet.Serialize(p), addr{network: "udp", addrport: this.Addr})
 	return err
 }
@@ -46,11 +46,11 @@ type TCPMessage struct {
 	conn net.Conn
 }
 
-func (this TCPMessage) getPacket() packet.Packet {
+func (this TCPMessage) GetPacket() packet.Packet {
 	return this.Packet
 }
 
-func (this TCPMessage) getAddr() netip.AddrPort {
+func (this TCPMessage) GetAddr() netip.AddrPort {
 	addr, err := netip.ParseAddrPort(this.conn.RemoteAddr().String())
 	if (err != nil) {
 		fmt.Println(err) //TODO: error handling
@@ -59,11 +59,11 @@ func (this TCPMessage) getAddr() netip.AddrPort {
 	return addr
 }
 
-func (this TCPMessage) sendResponse(p packet.Packet) error {
+func (this TCPMessage) SendResponse(p packet.Packet) error {
 	_, err := this.conn.Write(packet.Serialize(p))
 	return err
 }
 
-func (this TCPMessage) closeConn() error {
+func (this TCPMessage) CloseConn() error {
 	return this.conn.Close()
 }

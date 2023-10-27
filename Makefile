@@ -13,11 +13,7 @@ build:
 	go build -o bin/server ./cmd/server
 
 test: compile
-	ssh $(VM_USER)@$(VM_IP) "cd $(VM_TARGET_DIR); chmod +x test/test.sh; ./test/test.sh $(TEST_NAME)" 
+	ssh $(VM_USER)@$(VM_IP) "/bin/bash -c cd $(VM_TARGET_DIR); chmod +x test/test.sh; ./test/test.sh $(TEST_NAME)" 
 
 sync:
-	ssh $(VM_USER)@$(VM_IP) "mkdir -p $(VM_TARGET_DIR)/bin"
-	scp -r Makefile $(VM_USER)@$(VM_IP):$(VM_TARGET_DIR)
-	scp -r cmd/ $(VM_USER)@$(VM_IP):$(VM_TARGET_DIR)
-	scp -r internal/ $(VM_USER)@$(VM_IP):$(VM_TARGET_DIR)
-	scp -r test/ $(VM_USER)@$(VM_IP):$(VM_TARGET_DIR)
+	scp -r bin/ $(VM_USER)@$(VM_IP):$(VM_TARGET_DIR)

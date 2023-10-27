@@ -33,6 +33,15 @@ func (this *Service) SendUDP(p packet.Packet, address netip.AddrPort) {
 	this.udpServer.WriteTo(packet.Serialize(p), addr{network: "udp", addrport: address})
 }
 
+func (this *Service) SendTCP(p packet.Packet, address netip.AddrPort) {
+	conn, err := net.Dial("tcp", address.String())
+    if err != nil {
+        fmt.Println("error:", err)
+    }
+	conn.Write(packet.Serialize(p))
+	//conn.Close()
+}
+
 func (this *Service) Run(tcpPort int, udpPort int) error { //make ports optional (in case only one listener is needed)
 
 	this.finished.Add(1)

@@ -13,5 +13,5 @@ type StartupRequest struct {
 
 //bootstrapper -> any
 type StartupResponse struct {
-	RP netip.Addr
+	ConnectTo netip.Addr
 }
