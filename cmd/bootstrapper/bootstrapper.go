@@ -1,12 +1,13 @@
 package main
 
 import (
-    "fmt"
-    "github.com/SLP25/ESR/internal/service"
-    "github.com/SLP25/ESR/internal/utils"
-    "github.com/SLP25/ESR/internal/packet"
-    "net/netip"
-    "sync"
+	"fmt"
+	"net/netip"
+	"sync"
+
+	"github.com/SLP25/ESR/internal/packet"
+	"github.com/SLP25/ESR/internal/service"
+	"github.com/SLP25/ESR/internal/utils"
 )
 
 var serv service.Service
@@ -50,7 +51,7 @@ func (this *bootstrapper) processTCPPacket(p packet.Packet) packet.Packet {
     }
 }
 
-func (this *bootstrapper) Handle(sig service.Signal) {
+func (this *bootstrapper) Handle(sig service.Signal) bool {
     switch sig.(type) {
     case service.Init:
         fmt.Println("Ready!")
@@ -63,12 +64,16 @@ func (this *bootstrapper) Handle(sig service.Signal) {
         packet := tcp.GetPacket()
         response := this.processTCPPacket(packet)
         tcp.SendResponse(response)
+    default:
+        return false
     }
+    
+    return true
 }
 
 func main() {
     bootstrapper := bootstrapper{}
-    serv = service.Service{Handler: &bootstrapper}
+    serv.AddHandler(&bootstrapper)
     errr := serv.Run(4002, 4002)
     fmt.Println(errr)
     fmt.Println("Hello! I'm the bootstrapper")

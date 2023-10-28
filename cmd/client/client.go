@@ -2,7 +2,7 @@ package main
 
 import (
 	"fmt"
-	"net"
+	"net/netip"
 
 	"github.com/SLP25/ESR/internal/service"
 )
@@ -10,10 +10,10 @@ import (
 var serv service.Service
 
 type client struct {
-    accessNode net.Addr
+    accessNode netip.Addr
 }
 
-func (this client) Handle(sig service.Signal) {
+func (this client) Handle(sig service.Signal) bool {
     switch sig.(type) {
     case service.Init:
         fmt.Println("Ready!")
@@ -23,14 +23,19 @@ func (this client) Handle(sig service.Signal) {
     case service.Message:
         fmt.Println("Received packet")
         //TODO: handle packet
+
+    default:
+        return false
     }
+
+    return true
 }
 
 func main() {
     fmt.Println("Hello! I'm the client")
 
     client := client{}
-    serv = service.Service{Handler: client}
+    serv.AddHandler(client)
     serv.Run(69, 69)
     
     fmt.Println("Bye!")

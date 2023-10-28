@@ -1,11 +1,12 @@
 package main
 
 import (
-    "fmt"
-    "github.com/SLP25/ESR/internal/service"
-    "github.com/SLP25/ESR/internal/utils"
-    "github.com/SLP25/ESR/internal/packet"
-    "net/netip"
+	"fmt"
+	"net/netip"
+
+	"github.com/SLP25/ESR/internal/packet"
+	"github.com/SLP25/ESR/internal/service"
+	"github.com/SLP25/ESR/internal/utils"
 )
 
 
@@ -27,23 +28,29 @@ func (this *node) processTCPPacket(p packet.Packet) {
     }
 }
 
-func (this *node) Handle(sig service.Signal) {
+func (this *node) Handle(sig service.Signal) bool {
     fmt.Println("Aqui")
     switch sig.(type) {
     case service.Init:
-        serv.SendTCP(packet.StartupRequest{Service: utils.Node}, netip.MustParseAddrPort("10.0.17.20:4002"))
+        serv.TCPServer().SendConnect(packet.StartupRequest{Service: utils.Node}, netip.MustParseAddrPort("10.0.17.20:4002"))
     case service.TCPMessage:
         fmt.Println("Received packet")
         tcp := sig.(service.TCPMessage)
         packet := tcp.GetPacket()
         this.processTCPPacket(packet)
         //tcp.SendResponse(response)
+
+    default:
+        return false
     }
+
+    return true
 }
 
 func main() {
     node := node{}
-    serv = service.Service{Handler: &node}
+    serv.AddHandler(&node)
+    
     errr := serv.Run(4002, 4002)
     fmt.Println(errr)
     fmt.Println("Hello! I'm a node")

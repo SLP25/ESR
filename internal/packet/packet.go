@@ -27,7 +27,7 @@ func fetchType(name string) reflect.Type {
 
 //TODO: space-efficient marshalling
 
-func Serialize(val any) []byte {
+func Serialize(val Packet) []byte {
 	b, err := json.Marshal(val)
     if err != nil {
         fmt.Println(err)
@@ -37,7 +37,7 @@ func Serialize(val any) []byte {
 	return append([]byte(reflect.TypeOf(val).Name()), b...)
 }
 
-func Deserialize(data []byte) any {
+func Deserialize(data []byte) Packet {
 
 	aux := bytes.SplitN(data, []byte("{"), 2)
 	val := reflect.New(fetchType(string(aux[0]))).Interface()
