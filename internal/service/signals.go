@@ -3,7 +3,7 @@ package service
 import (
 	"net"
 	"net/netip"
-
+	"fmt"
 	"github.com/SLP25/ESR/internal/packet"
 )
 
@@ -44,6 +44,7 @@ func (this TCPMessage) GetAddr() netip.AddrPort {
 
 func (this TCPMessage) SendResponse(p packet.Packet) error {
 	_, err := this.conn.Write(packet.Serialize(p))
+	fmt.Println(err)
 	return err
 }
 

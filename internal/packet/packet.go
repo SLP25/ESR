@@ -33,12 +33,13 @@ func Serialize(val Packet) []byte {
         fmt.Println(err)
         return []byte{}
     }
-
-	return append([]byte(reflect.TypeOf(val).Name()), b...)
+	fmt.Println(val)
+	return append(append([]byte(reflect.TypeOf(val).Name()), b...), 0)
 }
 
 func Deserialize(data []byte) Packet {
-
+	//Remove trailing NULL byte
+	data = data[:len(data) - 1]
 	aux := bytes.SplitN(data, []byte("{"), 2)
 	val := reflect.New(fetchType(string(aux[0]))).Interface()
 
@@ -47,5 +48,6 @@ func Deserialize(data []byte) Packet {
         fmt.Println(err)
         return nil
     }
+	fmt.Println(val)
 	return val
 }

@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"net/netip"
 	"sync"
-
+    "reflect"
 	"github.com/SLP25/ESR/internal/packet"
 	"github.com/SLP25/ESR/internal/service"
 	"github.com/SLP25/ESR/internal/utils"
@@ -41,10 +41,11 @@ func (this *bootstrapper) processStartupRequest(p packet.StartupRequest) packet.
 
 func (this *bootstrapper) processTCPPacket(p packet.Packet) packet.Packet {
     fmt.Println("Packet received")
+    fmt.Println(reflect.TypeOf(p))
     switch p.(type) {
-    case packet.StartupRequest:
+    case *packet.StartupRequest:
         fmt.Println("Startup request")
-        return this.processStartupRequest(p.(packet.StartupRequest))
+        return this.processStartupRequest(*p.(*packet.StartupRequest))
     default:
         fmt.Println("Default")
         panic("Unsupported TCP packet")

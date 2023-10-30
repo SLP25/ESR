@@ -16,12 +16,20 @@ type node struct {
 
 var serv service.Service
 
+func (this *node) processStartupResponse(p packet.StartupResponse) {
+    if p.ConnectTo == netip.IPv4Unspecified() {
+        fmt.Println("First node")
+    } else {
+        fmt.Println(p.ConnectTo.String())
+    }
+}
+
 func (this *node) processTCPPacket(p packet.Packet) {
     fmt.Println("Packet received")
     switch p.(type) {
-    case packet.StartupResponse:
+    case *packet.StartupResponse:
         fmt.Println("Startup response")
-
+        this.processStartupResponse(*p.(*packet.StartupResponse))
     default:
         fmt.Println("Default")
         panic("Unsupported TCP packet")
@@ -32,7 +40,10 @@ func (this *node) Handle(sig service.Signal) bool {
     fmt.Println("Aqui")
     switch sig.(type) {
     case service.Init:
-        serv.TCPServer().SendConnect(packet.StartupRequest{Service: utils.Node}, netip.MustParseAddrPort("10.0.17.20:4002"))
+        err := serv.TCPServer().SendConnect(packet.StartupRequest{Service: utils.Node}, netip.MustParseAddrPort("10.0.17.20:4002"))
+        if err != nil {
+            fmt.Println(err)
+        }
     case service.TCPMessage:
         fmt.Println("Received packet")
         tcp := sig.(service.TCPMessage)

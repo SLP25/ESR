@@ -25,13 +25,16 @@ func (this TCPServer) Connect(addr netip.AddrPort) error {
 	conn, err := net.Dial("tcp", addr.String())
 	if err != nil { return err }
 	this.conns[addr] = conn
+	go this.handleConnection(conn)
 	return nil
 }
 
 // Sends a packet to the specified remote address.
 // If the connection wasn't established beforehand, the operation fails
 func (this TCPServer) Send(p packet.Packet, addr netip.AddrPort) error {
+	fmt.Println("Send")
 	_, err := this.conns[addr].Write(packet.Serialize(p))
+	if err != nil {fmt.Println(err)}
 	return err
 }
 
@@ -122,12 +125,14 @@ func (this TCPServer) handle() {
 func (this TCPServer) handleConnection(c net.Conn) {
 	fmt.Printf("Serving %s\n", c.RemoteAddr().String())
 	for {
+		fmt.Println("Super")
 		netData, err := bufio.NewReader(c).ReadBytes(0)
+		fmt.Println("Max")
 		if err != nil {
 			fmt.Println(err)
 			return
 		}
-
+		fmt.Println("Hello")
 		packet := packet.Deserialize(netData)
 		go this.service.handle(TCPMessage{Packet: packet, conn: c})
 	}
