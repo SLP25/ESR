@@ -2,9 +2,12 @@ package main
 
 import (
 	"fmt"
+	"log/slog"
 	"net/netip"
+	"os"
+	"reflect"
 	"sync"
-    "reflect"
+
 	"github.com/SLP25/ESR/internal/packet"
 	"github.com/SLP25/ESR/internal/service"
 	"github.com/SLP25/ESR/internal/utils"
@@ -43,9 +46,9 @@ func (this *bootstrapper) processTCPPacket(p packet.Packet) packet.Packet {
     fmt.Println("Packet received")
     fmt.Println(reflect.TypeOf(p))
     switch p.(type) {
-    case *packet.StartupRequest:
+    case packet.StartupRequest:
         fmt.Println("Startup request")
-        return this.processStartupRequest(*p.(*packet.StartupRequest))
+        return this.processStartupRequest(p.(packet.StartupRequest))
     default:
         fmt.Println("Default")
         panic("Unsupported TCP packet")
@@ -56,13 +59,11 @@ func (this *bootstrapper) Handle(sig service.Signal) bool {
     switch sig.(type) {
     case service.Init:
         fmt.Println("Ready!")
-        //TODO: connect to bootstrapper
-        //this.accessNode = ...
 
     case service.TCPMessage:
         fmt.Println("Received packet")
         tcp := sig.(service.TCPMessage)
-        packet := tcp.GetPacket()
+        packet := tcp.Packet()
         response := this.processTCPPacket(packet)
         tcp.SendResponse(response)
     default:
@@ -73,9 +74,16 @@ func (this *bootstrapper) Handle(sig service.Signal) bool {
 }
 
 func main() {
+    fmt.Println("Hello! I'm the bootstrapper")
+
+    handler := slog.HandlerOptions{AddSource: true, Level: slog.LevelDebug}
+    log := slog.New(slog.NewTextHandler(os.Stdout, &handler))
+    slog.SetDefault(log)
+
     bootstrapper := bootstrapper{}
     serv.AddHandler(&bootstrapper)
-    errr := serv.Run(4002, 4002)
-    fmt.Println(errr)
-    fmt.Println("Hello! I'm the bootstrapper")
+    err := serv.Run(4002, 4002)
+    if err != nil {
+        slog.Error("Error running service", err)
+    }
 }

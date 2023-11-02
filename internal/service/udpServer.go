@@ -2,8 +2,10 @@ package service
 
 import (
 	"fmt"
+	"log/slog"
 	"net"
 	"net/netip"
+	"reflect"
 	"strconv"
 
 	"github.com/SLP25/ESR/internal/packet"
@@ -12,10 +14,13 @@ import (
 type UDPServer struct {
 	service *Service
 	conn net.PacketConn
+	closed bool
 }
 
 // Sends a packet to specified remote address
-func (this UDPServer) Send(p packet.Packet, address netip.AddrPort) error {
+func (this *UDPServer) Send(p packet.Packet, address netip.AddrPort) error {
+	slog.Info("Sending UDP message", "packet", reflect.TypeOf(p).Name(), "content", p, "addr", address.String())
+	
 	conn, err := net.Dial("udp", address.String())
 	if err != nil { return err }
 
@@ -27,38 +32,48 @@ func (this UDPServer) Send(p packet.Packet, address netip.AddrPort) error {
 }
 
 
-func openUDP(service *Service, port uint16) (UDPServer, error) {
+func (this *UDPServer) open(service *Service, port uint16) error {
 	var err error
-	this := UDPServer{service: service}
+	*this = UDPServer{service: service}
 	this.conn, err = net.ListenPacket("udp", ":" + strconv.FormatUint(uint64(port), 10))
 	if err != nil {
-		return this, err
+		return err
 	}
 
+	slog.Info("Listening for UDP messages to", "port", port)
 	go this.handle()
-	return this, nil
+	return nil
 }
 
-func (this UDPServer) close() error {
+func (this *UDPServer) close() error {
+	this.closed = true
 	return this.conn.Close()
 }
 
-func (this UDPServer) handle() {
+func (this *UDPServer) handle() {
 	for {
 		buf := make([]byte, 1024)
-		_, addr, err := this.conn.ReadFrom(buf) //TODO: return if listener is closed
+		_, addr, err := this.conn.ReadFrom(buf)
 		if err != nil {
-			fmt.Println(err)
+			fmt.Println(this.closed)
+
+			if this.closed {
+				slog.Info("Closed UDP listener")
+				return
+			}
+
+			slog.Error("Error receiving UDP message", err)
 			continue
 		}
 
 		addrport, err := netip.ParseAddrPort(addr.String())
 		if err != nil {
-			fmt.Println(err)
+			slog.Error("Error parsing AddrPort from string", addr.String(), err)
 			continue
 		}
 
-		packet := packet.Deserialize(buf) //TODO: confirmar se isto nao está a passar bytes vazios
-		go this.service.handle(UDPMessage{packet: packet, addr: addrport, conn: this.conn})
+		packet := packet.Deserialize(buf)
+		slog.Info("Received UDP message", "packet", reflect.TypeOf(packet).Name(), "content", packet, "addr", addr.String())
+		this.service.sigQueue <- UDPMessage{packet: packet, addr: addrport, conn: this.conn}
 	}
 }

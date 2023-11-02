@@ -3,7 +3,7 @@ package packet
 import (
 	"bytes"
 	"encoding/json"
-	"fmt"
+	"log/slog"
 	"reflect"
 )
 
@@ -30,10 +30,9 @@ func fetchType(name string) reflect.Type {
 func Serialize(val Packet) []byte {
 	b, err := json.Marshal(val)
     if err != nil {
-        fmt.Println(err)
+        slog.Error("Error serializing packet", err)
         return []byte{}
     }
-	fmt.Println(val)
 	return append(append([]byte(reflect.TypeOf(val).Name()), b...), 0)
 }
 
@@ -41,13 +40,14 @@ func Deserialize(data []byte) Packet {
 	//Remove trailing NULL byte
 	data = data[:len(data) - 1]
 	aux := bytes.SplitN(data, []byte("{"), 2)
-	val := reflect.New(fetchType(string(aux[0]))).Interface()
+	pType := fetchType(string(aux[0]))
+	val := reflect.New(pType).Interface()
 
 	err := json.Unmarshal(append([]byte("{"), aux[1]...), val)
     if err != nil {
-        fmt.Println(err)
+		slog.Error("Error deserializing packet", err)
         return nil
     }
-	fmt.Println(val)
-	return val
+
+	return reflect.ValueOf(val).Elem().Interface()
 }

@@ -3,7 +3,7 @@ package service
 import (
 	"net"
 	"net/netip"
-	"fmt"
+
 	"github.com/SLP25/ESR/internal/packet"
 )
 
@@ -25,26 +25,20 @@ type Message interface {
 
 
 type TCPMessage struct {
-	Packet packet.Packet
+	packet packet.Packet
 	conn net.Conn
 }
 
-func (this TCPMessage) GetPacket() packet.Packet {
-	return this.Packet
+func (this TCPMessage) Packet() packet.Packet {
+	return this.packet
 }
 
-func (this TCPMessage) GetAddr() netip.AddrPort {
-	addr, err := netip.ParseAddrPort(this.conn.RemoteAddr().String())
-	if (err != nil) {
-		panic(err)
-	}
-
-	return addr
+func (this TCPMessage) Addr() netip.AddrPort {
+	return netip.MustParseAddrPort(this.conn.RemoteAddr().String())
 }
 
 func (this TCPMessage) SendResponse(p packet.Packet) error {
 	_, err := this.conn.Write(packet.Serialize(p))
-	fmt.Println(err)
 	return err
 }
 
@@ -59,11 +53,11 @@ type UDPMessage struct {
 	conn net.PacketConn
 }
 
-func (this UDPMessage) GetPacket() packet.Packet {
+func (this UDPMessage) Packet() packet.Packet {
 	return this.packet
 }
 
-func (this UDPMessage) GetAddr() netip.AddrPort {
+func (this UDPMessage) Addr() netip.AddrPort {
 	return this.addr
 }
 

@@ -15,3 +15,11 @@ type StartupRequest struct {
 type StartupResponse struct {
 	ConnectTo netip.Addr
 }
+
+type Ping struct {
+
+}
+
+type Pong struct {
+	neighbours map[netip.AddrPort] utils.Metrics
+}

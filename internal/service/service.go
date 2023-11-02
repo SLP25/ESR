@@ -2,6 +2,8 @@ package service
 
 import (
 	"fmt"
+	"log/slog"
+	"reflect"
 	"sync"
 )
 
@@ -11,40 +13,46 @@ type Handler interface {
 }
 
 type Service struct {
-	handlers []Handler
+	handlers []Handler	//TODO: controlo de concorrencia
 	udpServer UDPServer
 	tcpServer TCPServer
-	finished sync.WaitGroup
+	sigQueue chan Signal
+	paused sync.WaitGroup
 }
 
-func (this *Service) UDPServer() UDPServer {
-	return this.udpServer
+func (this *Service) UDPServer() *UDPServer {
+	return &this.udpServer
 }
 
-func (this *Service) TCPServer() TCPServer {
-	return this.tcpServer
+func (this *Service) TCPServer() *TCPServer {
+	return &this.tcpServer
 }
 
 func (this *Service) Run(tcpPort uint16, udpPort uint16) error { //make ports optional (in case only one listener is needed)
-	this.finished.Add(1)
 	var err error
 
-	this.tcpServer, err = openTCP(this, tcpPort)
+	this.sigQueue = make(chan Signal, 20)
+	err = this.tcpServer.open(this, tcpPort)
 	if err != nil { return err }
 	defer this.tcpServer.close()
 
-	this.udpServer, err = openUDP(this, udpPort)
+	err = this.udpServer.open(this, udpPort)
 	if err != nil { return err }
 	defer this.udpServer.close()
 	
 	this.handle(Init{})
-	this.finished.Wait()
+	
+	for sig := range this.sigQueue {
+		this.paused.Wait()
+		this.handle(sig)
+	}
+
 	this.handle(Closing{})
 	return nil
 }
 
 func (this *Service) Close() {
-	this.finished.Done()
+	close(this.sigQueue)
 }
 
 func (this *Service) AddHandler(h Handler) {
@@ -61,15 +69,26 @@ func (this *Service) RemoveHandler(h Handler) bool {
 		}
 	}
 
+	slog.Warn("RemoveHandler found no such handler to remove", h)
 	return false
 }
 
+func (this *Service) PauseHandleWhile(f func()) {
+	this.paused.Add(1)
+	f()
+	this.paused.Add(-1)
+}
+
 func (this *Service) handle(sig Signal) {
+	fmt.Println(len(this.handlers))
+
 	for i := len(this.handlers)-1; i >= 0; i-- {
+		fmt.Println(i)
 		if (this.handlers[i].Handle(sig)) {
+			fmt.Println("Processed.")
 			return
 		}
 	}
 
-	fmt.Println("Warning: unprocessed signal ", sig)
+	slog.Warn("Unprocessed signal", "type", reflect.TypeOf(sig).Name(), "content", sig)
 }

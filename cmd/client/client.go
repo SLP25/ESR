@@ -2,7 +2,9 @@ package main
 
 import (
 	"fmt"
+	"log/slog"
 	"net/netip"
+	"os"
 
 	"github.com/SLP25/ESR/internal/service"
 )
@@ -16,12 +18,10 @@ type client struct {
 func (this client) Handle(sig service.Signal) bool {
     switch sig.(type) {
     case service.Init:
-        fmt.Println("Ready!")
         //TODO: connect to bootstrapper
         //this.accessNode = ...
 
     case service.Message:
-        fmt.Println("Received packet")
         //TODO: handle packet
 
     default:
@@ -34,9 +34,15 @@ func (this client) Handle(sig service.Signal) bool {
 func main() {
     fmt.Println("Hello! I'm the client")
 
+    handler := slog.HandlerOptions{AddSource: true, Level: slog.LevelDebug}
+    log := slog.New(slog.NewTextHandler(os.Stdout, &handler))
+    slog.SetDefault(log)
+
     client := client{}
     serv.AddHandler(client)
-    serv.Run(69, 69)
-    
-    fmt.Println("Bye!")
+
+    err := serv.Run(69, 69)
+    if err != nil {
+        slog.Error("Error running service", err)
+    }
 }
