@@ -44,3 +44,24 @@ func ChainError(funcs ...risky) error {
     }
 	return nil
 }
+
+func ContainsKey[K comparable, V any](dict map[K]V, field K) bool {
+	_, ok := dict[field]
+	return ok
+}
+
+func GetAnyKey[K comparable, V any](dict map[K]V, defaultKey K) K {
+	for k, _ := range dict {
+		return k
+	}
+
+	return defaultKey
+}
+
+func GetAnyValue[K comparable, V any](dict map[K]V, defaultVal V) V {
+	for _, v := range dict {
+		return v
+	}
+
+	return defaultVal
+}

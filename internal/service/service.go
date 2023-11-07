@@ -1,7 +1,6 @@
 package service
 
 import (
-	"fmt"
 	"log/slog"
 	"reflect"
 	"sync"
@@ -75,17 +74,19 @@ func (this *Service) RemoveHandler(h Handler) bool {
 
 func (this *Service) PauseHandleWhile(f func()) {
 	this.paused.Add(1)
+	defer this.paused.Add(-1)
 	f()
-	this.paused.Add(-1)
 }
 
-func (this *Service) handle(sig Signal) {
-	fmt.Println(len(this.handlers))
+func PauseHandleWhile[T any](this *Service, f func() T) T {
+	this.paused.Add(1)
+	defer this.paused.Add(-1)
+	return f()
+}
 
+func (this *Service) Handle(sig Signal) {
 	for i := len(this.handlers)-1; i >= 0; i-- {
-		fmt.Println(i)
 		if (this.handlers[i].Handle(sig)) {
-			fmt.Println("Processed.")
 			return
 		}
 	}

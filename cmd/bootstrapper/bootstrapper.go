@@ -16,21 +16,15 @@ import (
 var serv service.Service
 
 type bootstrapper struct {
+    config config
     accessNode netip.Addr
-    nodes []netip.Addr
     mu sync.Mutex
 }
 
-func (this *bootstrapper) getConnectToIP() netip.Addr {
-    ip := netip.IPv4Unspecified()
-
+func (this *bootstrapper) getConnectToIP() netip.AddrPort {
     this.mu.Lock()
-    if len(this.nodes) > 0 {
-        ip = this.nodes[0]
-    } 
-    this.mu.Unlock()
-
-    return ip
+    defer this.mu.Unlock()
+    return utils.GetAnyValue(this.config.nodes, netip.AddrPortFrom(netip.IPv4Unspecified(), 0))
 }
 
 func (this *bootstrapper) processStartupRequest(p packet.StartupRequest) packet.StartupResponse {
@@ -75,12 +69,12 @@ func (this *bootstrapper) Handle(sig service.Signal) bool {
 
 func main() {
     fmt.Println("Hello! I'm the bootstrapper")
+    bootstrapper := bootstrapper{config: MustReadConfig("bootConfig.json")}
 
     handler := slog.HandlerOptions{AddSource: true, Level: slog.LevelDebug}
     log := slog.New(slog.NewTextHandler(os.Stdout, &handler))
     slog.SetDefault(log)
 
-    bootstrapper := bootstrapper{}
     serv.AddHandler(&bootstrapper)
     err := serv.Run(4002, 4002)
     if err != nil {

@@ -13,7 +13,7 @@ type StartupRequest struct {
 
 //bootstrapper -> any
 type StartupResponse struct {
-	ConnectTo netip.Addr
+	ConnectTo netip.AddrPort
 }
 
 type Ping struct {

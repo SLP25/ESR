@@ -6,7 +6,9 @@ import (
 	"net/netip"
 	"os"
 
+	"github.com/SLP25/ESR/internal/packet"
 	"github.com/SLP25/ESR/internal/service"
+	"github.com/SLP25/ESR/internal/utils"
 )
 
 var serv service.Service
@@ -18,6 +20,13 @@ type client struct {
 func (this client) Handle(sig service.Signal) bool {
     switch sig.(type) {
     case service.Init:
+        addr := netip.MustParseAddrPort("127.0.0.1:4002")
+        err := serv.TCPServer().SendConnect(packet.StartupRequest{Service: utils.Client}, addr)
+        if err != nil {
+            slog.Error("Error on Init:", err)
+            return true
+        }
+
         //TODO: connect to bootstrapper
         //this.accessNode = ...
 

@@ -1,7 +1,6 @@
 package service
 
 import (
-	"fmt"
 	"log/slog"
 	"net"
 	"net/netip"
@@ -55,8 +54,6 @@ func (this *UDPServer) handle() {
 		buf := make([]byte, 1024)
 		_, addr, err := this.conn.ReadFrom(buf)
 		if err != nil {
-			fmt.Println(this.closed)
-
 			if this.closed {
 				slog.Info("Closed UDP listener")
 				return

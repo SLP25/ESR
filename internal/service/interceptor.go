@@ -1,7 +1,6 @@
 package service
 
 import (
-	"fmt"
 	"log/slog"
 	"net/netip"
 
@@ -20,10 +19,6 @@ type interceptor struct {
 
 func (this *interceptor) Handle(sig Signal) bool {
 	if this.accept(sig) {
-
-		if sig == nil {
-			fmt.Println("BATATA")
-		}
 
 		this.n -= 1
 		if this.n == 0 {

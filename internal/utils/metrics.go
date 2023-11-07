@@ -1,5 +1,5 @@
 package utils
 
 type Metrics struct {
-	//TODO
+	PingTime int //roundtrip
 }
