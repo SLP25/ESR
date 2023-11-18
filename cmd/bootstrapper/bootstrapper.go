@@ -5,7 +5,7 @@ import (
 	"log/slog"
 	"net/netip"
 	"os"
-	"reflect"
+	"strconv"
 	"sync"
 
 	"github.com/SLP25/ESR/internal/packet"
@@ -13,6 +13,7 @@ import (
 	"github.com/SLP25/ESR/internal/utils"
 )
 
+var port uint16
 var serv service.Service
 
 type bootstrapper struct {
@@ -21,63 +22,63 @@ type bootstrapper struct {
     mu sync.Mutex
 }
 
-func (this *bootstrapper) getConnectToIP() netip.AddrPort {
+func (this *bootstrapper) getConnectToIP() netip.AddrPort { //TODO: return error if fail
     this.mu.Lock()
     defer this.mu.Unlock()
     return utils.GetAnyValue(this.config.nodes, netip.AddrPortFrom(netip.IPv4Unspecified(), 0))
 }
 
-func (this *bootstrapper) processStartupRequest(p packet.StartupRequest) packet.StartupResponse {
-    switch p.Service {
-    case utils.Node:
-        return packet.StartupResponse{ConnectTo: this.getConnectToIP()}
-    default:
-        panic("Not supported")
-    }
-}
-
-func (this *bootstrapper) processTCPPacket(p packet.Packet) packet.Packet {
-    fmt.Println("Packet received")
-    fmt.Println(reflect.TypeOf(p))
-    switch p.(type) {
-    case packet.StartupRequest:
-        fmt.Println("Startup request")
-        return this.processStartupRequest(p.(packet.StartupRequest))
-    default:
-        fmt.Println("Default")
-        panic("Unsupported TCP packet")
-    }
-}
-
 func (this *bootstrapper) Handle(sig service.Signal) bool {
     switch sig.(type) {
     case service.Init:
-        fmt.Println("Ready!")
+        return true
 
     case service.TCPMessage:
-        fmt.Println("Received packet")
-        tcp := sig.(service.TCPMessage)
-        packet := tcp.Packet()
-        response := this.processTCPPacket(packet)
-        tcp.SendResponse(response)
-    default:
-        return false
+        msg := sig.(service.TCPMessage)
+        switch msg.Packet().(type) {
+        case packet.StartupRequest:
+            req := msg.Packet().(packet.StartupRequest)
+            switch req.Service {
+            case utils.Client:
+                utils.Warn(msg.SendResponse(packet.StartupResponseClient{ConnectTo: this.getConnectToIP()}))
+                utils.Warn(msg.CloseConn())
+                return true
+            case utils.Node:
+                resp, err := this.config.BootNode(msg.Addr().Addr())
+                if err != nil {
+                    slog.Error("Error starting node", "addr", msg.Addr(), "err", err)
+                } else {
+                    utils.Warn(msg.SendResponse(resp))
+                    utils.Warn(msg.CloseConn())
+                }
+                return true
+            }
+        }        
     }
     
-    return true
+    return false
 }
 
 func main() {
-    fmt.Println("Hello! I'm the bootstrapper")
-    bootstrapper := bootstrapper{config: MustReadConfig("bootConfig.json")}
+    utils.SetupLogging()
 
-    handler := slog.HandlerOptions{AddSource: true, Level: slog.LevelDebug}
-    log := slog.New(slog.NewTextHandler(os.Stdout, &handler))
-    slog.SetDefault(log)
+    if len(os.Args) != 3 {
+        fmt.Println("Usage: bootstrapper <port> <config>")
+        return
+    }
+
+    aux, err := strconv.ParseUint(os.Args[1], 10, 16)
+    if err != nil {
+        fmt.Println("Invalid port: the port must be an integer between 0 and 65535")
+        return
+    }
+    port = uint16(aux)
+
+    bootstrapper := bootstrapper{config: MustReadConfig(os.Args[2])}
 
     serv.AddHandler(&bootstrapper)
-    err := serv.Run(4002, 4002)
+    err = serv.Run(&port, nil)
     if err != nil {
-        slog.Error("Error running service", err)
+        slog.Error("Error running service", "err", err)
     }
 }

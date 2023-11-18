@@ -17,6 +17,7 @@ type Service struct {
 	tcpServer TCPServer
 	sigQueue chan Signal
 	paused sync.WaitGroup
+	handling sync.WaitGroup
 }
 
 func (this *Service) UDPServer() *UDPServer {
@@ -27,7 +28,7 @@ func (this *Service) TCPServer() *TCPServer {
 	return &this.tcpServer
 }
 
-func (this *Service) Run(tcpPort uint16, udpPort uint16) error { //make ports optional (in case only one listener is needed)
+func (this *Service) Run(tcpPort *uint16, udpPort *uint16) error {
 	var err error
 
 	this.sigQueue = make(chan Signal, 20)
@@ -39,19 +40,24 @@ func (this *Service) Run(tcpPort uint16, udpPort uint16) error { //make ports op
 	if err != nil { return err }
 	defer this.udpServer.close()
 	
-	this.handle(Init{})
-	
+	go this.handle(Init{})
+
 	for sig := range this.sigQueue {
 		this.paused.Wait()
-		this.handle(sig)
+		go this.handle(sig)
 	}
 
 	this.handle(Closing{})
+	this.handling.Wait()
 	return nil
 }
 
 func (this *Service) Close() {
 	close(this.sigQueue)
+}
+
+func (this *Service) Enqueue(s Signal) {
+	this.sigQueue <- s
 }
 
 func (this *Service) AddHandler(h Handler) {
@@ -68,10 +74,11 @@ func (this *Service) RemoveHandler(h Handler) bool {
 		}
 	}
 
-	slog.Warn("RemoveHandler found no such handler to remove", h)
+	slog.Warn("RemoveHandler found no such handler to remove", "handler", h)
 	return false
 }
 
+//blocks future calls to service.handle() until the function returns
 func (this *Service) PauseHandleWhile(f func()) {
 	this.paused.Add(1)
 	defer this.paused.Add(-1)
@@ -84,8 +91,11 @@ func PauseHandleWhile[T any](this *Service, f func() T) T {
 	return f()
 }
 
-func (this *Service) Handle(sig Signal) {
-	for i := len(this.handlers)-1; i >= 0; i-- {
+func (this *Service) handle(sig Signal) {
+	this.handling.Add(1)
+	defer this.handling.Add(-1)
+
+	for i := len(this.handlers)-1; i >= 0; i-- { //TODO: loop sus (concorrencia)
 		if (this.handlers[i].Handle(sig)) {
 			return
 		}

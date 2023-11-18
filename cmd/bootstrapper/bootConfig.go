@@ -2,10 +2,12 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"net/netip"
 	"os"
 	"slices"
 
+	"github.com/SLP25/ESR/internal/packet"
 	"github.com/SLP25/ESR/internal/utils"
 )
 
@@ -34,7 +36,11 @@ func MustReadConfig(filename string) config {
 	if err != nil { panic(err.Error()) }
 
 	var data map[string]any
-	json.Unmarshal(bytes, &data)
+	err = json.Unmarshal(bytes, &data)
+	if err != nil {
+		panic("Error parsing boot config: " + err.Error())
+	}
+
 	config := config{nodes: make(map[string]netip.AddrPort), edges: make(map[pair]utils.Metrics)}
 
 	for _, aux := range readField(data, "servers").([]any) {
@@ -68,6 +74,8 @@ func MustReadConfig(filename string) config {
 				
 				if utils.ContainsKey[pair](config.edges, edge) {
 					panic("Repeated edge in boot config")
+				} else if edge.first == edge.second {
+					panic("Self-loop in boot config not allowed")
 				}
 				
 				var metrics utils.Metrics
@@ -88,5 +96,53 @@ func MustReadConfig(filename string) config {
 	}
 
 	config.rp = readField(data, "rp").(string)
+	if !utils.ContainsKey(config.nodes, config.rp) {
+		panic("RP not registered as a node in boot config: " + config.rp)
+	}
+
 	return config
+}
+
+func (this *config) getName(node netip.Addr) (string, error) {
+	for name, n := range this.nodes {
+		if n.Addr() == node {
+			return name, nil
+		}
+	}
+
+	return "", errors.New(node.String() + " not in boot config")
+} 
+
+func (this *config) getNeighbours(node netip.Addr) ([]netip.AddrPort, error) {
+	n, err := this.getName(node)
+	neighbours := make([]netip.AddrPort,0)
+
+	if err != nil {
+		return neighbours, err
+	}
+
+
+	for edge := range this.edges {
+		if edge.first == n {
+			neighbours = append(neighbours, this.nodes[edge.second])
+		} else if edge.second == n {
+			neighbours = append(neighbours, this.nodes[edge.first])
+		}
+	}
+
+	return neighbours, nil
+}
+
+func (this *config) BootNode(node netip.Addr) (packet.StartupResponseNode, error) {
+	neighbours, err := this.getNeighbours(node)
+	if err != nil {
+		return packet.StartupResponseNode{}, err
+	}
+
+	var servers []netip.AddrPort
+	if node == this.nodes[this.rp].Addr() {
+		servers = this.servers
+	}
+
+	return packet.StartupResponseNode{Neighbours: neighbours, Servers: servers}, nil
 }

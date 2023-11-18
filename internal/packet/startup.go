@@ -11,15 +11,13 @@ type StartupRequest struct {
 	Service utils.ServiceType
 }
 
-//bootstrapper -> any
-type StartupResponse struct {
+//bootstrapper -> client
+type StartupResponseClient struct {
 	ConnectTo netip.AddrPort
 }
 
-type Ping struct {
-
-}
-
-type Pong struct {
-	neighbours map[netip.AddrPort] utils.Metrics
+//bootstrapper -> node
+type StartupResponseNode struct {
+	Neighbours []netip.AddrPort
+	Servers []netip.AddrPort
 }
