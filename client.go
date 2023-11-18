@@ -1,10 +1,10 @@
 package main
 
 import (
-	"os/exec"
-	"os"
 	"fmt"
 	"net"
+	"os"
+	"os/exec"
 )
 
 func main() {
@@ -37,10 +37,9 @@ func main() {
 
 	// buffer to get data
 	i := 0
-	received := make([]byte, 188)
+	received := make([]byte, 1880)
 	for {
 		_, err := conn.Read(received)
-		fmt.Println(i)
 		i++
 		if err != nil {
 			println("Read data failed:", err.Error())

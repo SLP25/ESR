@@ -4,19 +4,16 @@ import (
 	"fmt"
 	//"github.com/asticode/go-astits"
 	//"context"
-	"os"
 	"net"
 	"os/exec"
 	//"time"
 )
 
 func main() {
-	//ffmpeg := exec.Command("ffmpeg", "-i", "video.mp4", "-c:v", "copy", "-preset", "ultrafast", "-c:a", "copy", "-f", "mpegts", "video.ts")
-	//ffmpeg.Start()
-	//ffmpeg.Wait()
-
-	f, _ := os.Open("video.ts")
-	defer f.Close()
+	ffmpeg := exec.Command("ffmpeg", "-re", "-i", "video.mp4", "-c:v", "copy", "-preset", "ultrafast", "-c:a", "copy", "-f", "mpegts", "-")
+	stdout, _ := ffmpeg.StdoutPipe()
+	//f, _ := os.Open("video.ts")
+	//defer f.Close()
 
 	udpServer, err := net.ListenPacket("udp", ":1053")
 	if err != nil {
@@ -35,19 +32,20 @@ func main() {
 	if err != nil {
 		return
 	}
-
+	ffmpeg.Start()
 	i := 0
 	//frameDuration := 1000.0 / 1000.0
 	for {
-		packet := make([]byte, 188)
-		n, _ := f.Read(packet)
+		packet := make([]byte, 1880)
+		n, _ := stdout.Read(packet) //f.Read(packet)
 
 		if n == 0 {
-			f.Seek(0,0)
+			//f.Seek(0, 0)
 			continue
 		}
 		stdin.Write(packet)
 		udpServer.WriteTo(packet, addr)
+
 		i++
 		//time.Sleep(time.Duration(frameDuration) * time.Millisecond)
 	}
