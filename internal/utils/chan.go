@@ -5,7 +5,6 @@ func CastChan[T any, U any](from <-chan T) chan U {
 	go func() {
 		var val any
 		for val = range from {
-			val = <-from
 			to <- val.(U)
 		}
 	}()

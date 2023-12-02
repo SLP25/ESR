@@ -1,9 +1,12 @@
 package packet
 
 import (
-	"bytes"
+	"encoding/binary"
 	"encoding/json"
+	"errors"
+	"io"
 	"log/slog"
+	"math"
 	"reflect"
 )
 
@@ -19,9 +22,21 @@ var packet_list = []reflect.Type{
 	reflect.TypeOf(ProbeResponse{}),
 	
 	reflect.TypeOf(StreamRequest{}),
+	reflect.TypeOf(StreamResponse{}),
 	reflect.TypeOf(StreamCancel{}),
 	reflect.TypeOf(StreamEnd{}),
 	reflect.TypeOf(StreamPacket{}),
+}
+
+func encodeType(t reflect.Type) (byte, error) {
+	for i, t2 := range packet_list {
+		if t == t2 {
+			return byte(i), nil
+		}
+	}
+
+	slog.Error("Packet type not registered", "type", t)
+	return 0, errors.New("Packet type " + t.Name() + " not registered")
 }
 
 func fetchType(name string) reflect.Type {
@@ -31,32 +46,54 @@ func fetchType(name string) reflect.Type {
 		}
 	}
 
+	slog.Error("Unknown packet type", "type", name)
 	return nil
 }
 
 //TODO: space-efficient marshalling
 
-func Serialize(val Packet) []byte {
+func Serialize(val Packet, w io.Writer) (int, error) {
 	b, err := json.Marshal(val)
     if err != nil {
         slog.Error("Error serializing packet", "err", err)
-        return []byte{}
+        return 0, err
     }
-	return append(append([]byte(reflect.TypeOf(val).Name()), b...), 0)
+
+	if len(b) > math.MaxUint16 {
+		return 0, errors.New("packet.Serialize(): Packet too big")
+	}
+
+	length := make([]byte, 2)
+	binary.LittleEndian.PutUint16(length, uint16(len(b)))
+
+	typeCode, err := encodeType(reflect.TypeOf(val))
+	if err != nil { return 0, err }
+	
+	ans := append(append(length, typeCode), b...)
+	_, err = w.Write(ans)
+	if err != nil { return 0, err }
+
+	return 3 + len(b), nil
 }
 
-func Deserialize(data []byte) Packet {
-	//Remove trailing NULL byte
-	data = data[:len(data) - 1]
-	aux := bytes.SplitN(data, []byte("{"), 2)
-	pType := fetchType(string(aux[0]))
+func Deserialize(r io.Reader) (Packet, error) {
+	var length uint16
+	err := binary.Read(r, binary.LittleEndian, &length)
+	if err != nil { return nil, err }
+
+	var typeCode byte
+	err = binary.Read(r, binary.LittleEndian, &typeCode)
+	if err != nil { return nil, err }
+
+	data := make([]byte, length)
+	_, err = io.ReadFull(r, data)
+	if err != nil { return nil, err }
+
+	pType := packet_list[typeCode]
 	val := reflect.New(pType).Interface()
 
-	err := json.Unmarshal(append([]byte("{"), aux[1]...), val)
-    if err != nil {
-		slog.Error("Error deserializing packet", "err", err)
-        return nil
-    }
+	err = json.Unmarshal(data, val)
+    if err != nil { return nil, err }
 
-	return reflect.ValueOf(val).Elem().Interface()
+	return reflect.ValueOf(val).Elem().Interface(), nil
 }

@@ -1,7 +1,6 @@
 package service
 
 import (
-	"bufio"
 	"errors"
 	"io"
 	"log/slog"
@@ -9,20 +8,32 @@ import (
 	"net/netip"
 	"reflect"
 	"strconv"
+	"sync"
+	"time"
 
 	"github.com/SLP25/ESR/internal/packet"
+	"github.com/SLP25/ESR/internal/utils"
 )
 
+type connection struct {
+	net.Conn
+	closed bool
+}
+
 type TCPServer struct {
-	service *Service
+	output chan Signal
 	listener net.Listener
-	conns map[netip.Addr]net.Conn
+	conns map[netip.Addr]*connection
+	connsMutex sync.RWMutex
 	closed bool
 }
 
 // Establishes a TCP connection to the specified remote address.
 // If such connection is already established, nothing happens (this method is idempotent)
 func (this *TCPServer) Connect(addr netip.AddrPort) error {
+	this.connsMutex.Lock()
+	defer this.connsMutex.Unlock()
+
 	_, ok := this.conns[addr.Addr()]
 	if ok { return nil }
 
@@ -30,29 +41,37 @@ func (this *TCPServer) Connect(addr netip.AddrPort) error {
 	conn, err := net.Dial("tcp", addr.String())
 	if err != nil { return err }
 
-	this.conns[addr.Addr()] = conn
-	go this.handleConnection(conn)
+	c := &connection{conn, false}
+	this.conns[addr.Addr()] = c
+	go this.handleConnection(c)
 	return nil
 }
 
 // Sends a packet to the specified remote address.
 // If the connection wasn't established beforehand, the operation fails
 func (this *TCPServer) Send(p packet.Packet, addr netip.Addr) error {
-	slog.Info("Sending TCP message", "packet", reflect.TypeOf(p).Name(), "content", p, "addr", addr)
+	slog.Debug("Sending TCP message", "packet", reflect.TypeOf(p).Name(), "content", utils.Ellipsis(p, 250), "addr", addr)
+
+	this.connsMutex.RLock()
+	defer this.connsMutex.RUnlock()
 
 	_, ok := this.conns[addr]
-	if !ok { return errors.New("Error sending packet: connection not established to remote " + addr.String()) }
+	if !ok { return errors.New("Error sending TCP packet: connection not established to remote " + addr.String()) }
 
-	_, err := this.conns[addr].Write(packet.Serialize(p))
+	_, err := packet.Serialize(p, this.conns[addr])
 	return err
 }
 
 // Closes the connection to specified remote address.
 // If no such connection exists, nothing happens (this method is idempotent)
 func (this *TCPServer) CloseConn(addr netip.Addr) error {
+	this.connsMutex.Lock()
+	defer this.connsMutex.Unlock()
+	
 	conn, ok := this.conns[addr]
 	if !ok { return nil }
 
+	conn.closed = true
 	err := conn.Close()
 	if err != nil { return err }
 
@@ -95,9 +114,9 @@ func (this *TCPServer) SendSingle(p packet.Packet, addr netip.AddrPort) error {
 }
 
 
-func (this *TCPServer) open(service *Service, port *uint16) error {
+func (this *TCPServer) Open(port *uint16) error {
 	var err error
-	*this = TCPServer{service: service, conns: make(map[netip.Addr]net.Conn)}
+	*this = TCPServer{output: make(chan Signal), conns: make(map[netip.Addr]*connection)}
 
 	if port != nil {
 		this.listener, err = net.Listen("tcp", ":" + strconv.FormatUint(uint64(*port), 10))
@@ -113,12 +132,26 @@ func (this *TCPServer) open(service *Service, port *uint16) error {
 	return nil
 }
 
-func (this *TCPServer) close() error {
-	this.closed = true
+func (this *TCPServer) Close() error {
+	if !this.closed {
+		this.closed = true
+		close(this.output)
+	}
+	
 	if this.listener != nil {
 		return this.listener.Close()
 	} else {
 		return nil
+	}
+}
+
+func (this *TCPServer) Output() chan Signal {
+	return this.output
+}
+
+func (this *TCPServer) sendOutput(msg Signal) {
+	if !this.closed {
+		this.output <- msg
 	}
 }
 
@@ -142,29 +175,45 @@ func (this *TCPServer) handle() {
 			continue
 		}
 
-		this.conns[addr.Addr()] = conn
-		go this.handleConnection(conn)
+		this.connsMutex.Lock()
+		c := &connection{conn, false}
+		this.conns[addr.Addr()] = c
+		this.connsMutex.Unlock()
+
+		go this.handleConnection(c)
 	}
 }
 
-func (this *TCPServer) handleConnection(c net.Conn) {
+func (this *TCPServer) handleConnection(c *connection) {
+	remote := netip.MustParseAddrPort(c.RemoteAddr().String())
 	slog.Info("Listening for TCP messages from", "addr", c.RemoteAddr())
 
-	this.service.Enqueue(TCPConnected{c})
-	defer this.service.Enqueue(TCPDisconnected{netip.MustParseAddrPort(c.RemoteAddr().String())})
-	defer delete(this.conns, netip.MustParseAddrPort(c.RemoteAddr().String()).Addr())
+	this.output <- TCPConnected{c}
+	defer func() {
+		slog.Info("Stopped listening for TCP messages from", "addr", c.RemoteAddr())
+		c.closed = true
+		this.connsMutex.Lock()
+		delete(this.conns, remote.Addr())
+		this.connsMutex.Unlock()
+		this.sendOutput(TCPDisconnected{remote})
+	}()
 
 	for {
-		netData, err := bufio.NewReader(c).ReadBytes(0)
-		if errors.Is(err, io.EOF) {
+		packet, err := packet.Deserialize(c)
+		time.Sleep(time.Millisecond * 10)
+
+		if errors.Is(err, io.EOF) { //closed by remote
 			slog.Info("TCP connection closed by remote", "addr", c.RemoteAddr())
 			return
-		} else if err != nil { //TODO: not log an error if connection is closed by local
+		} else if c.closed { //closed by local
+			return
+		} else if err != nil {
 			slog.Error("Error receiving TCP message from", "addr", c.RemoteAddr(), "err", err)
+			utils.Warn(c.Close())
 			return
 		}
-		packet := packet.Deserialize(netData)
-		slog.Info("Received TCP message", "addr", c.RemoteAddr(), "packet", reflect.TypeOf(packet).Name(), "content", packet)
-		this.service.Enqueue(TCPMessage{packet: packet, conn: c})
+
+		slog.Debug("Received TCP message", "addr", c.RemoteAddr(), "packet", reflect.TypeOf(packet).Name(), "content", utils.Ellipsis(packet, 250))
+		this.sendOutput(TCPMessage{packet: packet, conn: c})
 	}
 }

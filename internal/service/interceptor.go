@@ -26,14 +26,14 @@ func (this *interceptor) Handle(sig Signal) bool {
 		}
 
 		select {
-		case this.ans <- sig:
-			if this.n == 0 {
-				close(this.ans)
-			}
-			return true
-		default:
-			slog.Warn("Interceptor hit its maximum buffer size. Signal dropped")
-			return true
+			case this.ans <- sig:
+				if this.n == 0 {
+					close(this.ans)
+				}
+				return true
+			default:
+				slog.Warn("Interceptor hit its maximum buffer size. Signal dropped")
+				return true
 		}
 	}
 
@@ -77,10 +77,10 @@ func InterceptTCPMessages(service *Service, addr netip.AddrPort, n int) <-chan T
 
 // Intercepts the first n messages from the specified remote address
 // If n is non-positive, all messages from the remote address are intercepted
-func InterceptUDPMessages(service *Service, addr netip.AddrPort, n int) <-chan UDPMessage {
+func InterceptUDPMessages(service *Service, localPort uint16, addr netip.AddrPort, n int) <-chan UDPMessage {
 	return utils.CastChan[Signal, UDPMessage](Intercept(service, func(sig Signal) bool {
 		msg, ok := sig.(UDPMessage)
-		return ok && utils.Matches(addr, msg.Addr())
+		return ok && utils.MatchesPort(localPort, msg.localPort) && utils.Matches(addr, msg.Addr())
 	}, n))
 }
 
@@ -114,13 +114,13 @@ func InterceptTCPPackets[T packet.Packet](service *Service, addr netip.AddrPort,
 
 // Intercepts the first n messages from the specified remote address
 // If n is non-positive, all messages from the remote address are intercepted
-func InterceptUDPPackets[T packet.Packet](service *Service, addr netip.AddrPort, n int) <-chan T {
+func InterceptUDPPackets[T packet.Packet](service *Service, localPort uint16, addr netip.AddrPort, n int) <-chan T {
 	return utils.MapChan[Signal, T](Intercept(service, func(sig Signal) bool {
 		msg, ok := sig.(UDPMessage)
 		if !ok { return false }
 
 		_, ok = msg.Packet().(T)
-		return ok && utils.Matches(addr, msg.Addr())
+		return ok && utils.MatchesPort(localPort, msg.localPort) && utils.Matches(addr, msg.Addr())
 	}, n), func (sig Signal) T {
 		return sig.(UDPMessage).Packet().(T)
 	})
@@ -134,7 +134,7 @@ func InterceptTCPResponse[T packet.Packet](service *Service, request packet.Pack
 	
 	service.PauseHandleWhile(func() {
 		err = service.TCPServer().SendConnect(request, addr) //TODO: allow other sends?
-		aux = InterceptTCPPackets[T](service, addr, 1)	//TODO: allow response from different port (set port to 0)
+		aux = InterceptTCPPackets[T](service, addr, 1)
 	})
 
 	if err != nil {
@@ -144,13 +144,15 @@ func InterceptTCPResponse[T packet.Packet](service *Service, request packet.Pack
 	}
 }
 
-func InterceptUDPResponse[T packet.Packet](service *Service, request packet.Packet, addr netip.AddrPort) (T, error) {
+func InterceptUDPResponse[T packet.Packet](serv *Service, request packet.Packet, port uint16, addr netip.AddrPort) (T, error) {
 	var aux <-chan T
 	var err error
 	
-	service.PauseHandleWhile(func() {
-		err = service.UDPServer().Send(request, addr)
-		aux = InterceptUDPPackets[T](service, addr, 1)
+	serv.PauseHandleWhile(func() {
+		err = SendUDP(request, addr)
+		if err != nil {
+			aux = InterceptUDPPackets[T](serv, port, addr, 1)
+		}
 	})
 
 	if err != nil {

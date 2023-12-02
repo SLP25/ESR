@@ -1,6 +1,7 @@
 package service
 
 import (
+	"errors"
 	"log/slog"
 	"net"
 	"net/netip"
@@ -8,22 +9,29 @@ import (
 	"strconv"
 
 	"github.com/SLP25/ESR/internal/packet"
+	"github.com/SLP25/ESR/internal/utils"
 )
 
+type UDPPacket struct {
+	Source netip.AddrPort
+	Conn net.PacketConn
+	Data []byte
+}
+
 type UDPServer struct {
-	service *Service
+	output chan UDPPacket
 	conn net.PacketConn
 	closed bool
 }
 
 // Sends a packet to specified remote address
-func (this *UDPServer) Send(p packet.Packet, address netip.AddrPort) error {
-	slog.Info("Sending UDP message", "packet", reflect.TypeOf(p).Name(), "content", p, "addr", address)
+func SendUDP(p packet.Packet, address netip.AddrPort) error {
+	slog.Debug("Sending UDP message", "packet", reflect.TypeOf(p).Name(), "content", utils.Ellipsis(p, 250), "addr", address)
 	
 	conn, err := net.Dial("udp", address.String())
 	if err != nil { return err }
 
-	_, err2 := conn.Write(packet.Serialize(p))
+	_, err2 := packet.Serialize(p, conn)
 	err3 := conn.Close()
 
 	if err2 != nil { return err2 }
@@ -31,57 +39,58 @@ func (this *UDPServer) Send(p packet.Packet, address netip.AddrPort) error {
 }
 
 
-func (this *UDPServer) open(service *Service, port *uint16) error {
-	var err error
-	*this = UDPServer{service: service}
-
-	if port != nil {
-		this.conn, err = net.ListenPacket("udp", ":" + strconv.FormatUint(uint64(*port), 10))
-		if err != nil {
-			return err
-		}
-	
-		*port = netip.MustParseAddrPort(this.conn.LocalAddr().String()).Port()
-		slog.Info("Listening for UDP messages", "port", *port)
-		go this.handle()
+func (this *UDPServer) Open(port *uint16) error {
+	if port == nil {
+		return errors.New("UDPServer.open(): Nil port")
 	}
+
+	var err error
+	*this = UDPServer{output: make(chan UDPPacket), closed: false}
+
+	this.conn, err = net.ListenPacket("udp", ":" + strconv.FormatUint(uint64(*port), 10))
+	if err != nil {
+		return err
+	}
+
+	*port = netip.MustParseAddrPort(this.conn.LocalAddr().String()).Port()
+	slog.Info("Listening for UDP messages", "port", *port)
+	go this.handle()
 	
 	return nil
 }
 
-func (this *UDPServer) close() error {
-	this.closed = true
-	if this.conn != nil {
+func (this *UDPServer) Close() error {
+	if !this.closed {
+		this.closed = true
 		return this.conn.Close()
 	} else {
 		return nil
 	}
 }
 
+func (this *UDPServer) Output() chan UDPPacket {
+	return this.output
+}
+
 func (this *UDPServer) handle() {
-	buf := make([]byte, 4096)
+	buf := make([]byte, 65600)
 	
 	for {
 		n, addr, err := this.conn.ReadFrom(buf)
 		
 		if n != 0 {
-			addrport, err := netip.ParseAddrPort(addr.String())
-			if err != nil {
-				slog.Error("Error parsing AddrPort from string", "addr", addr, "err", err)
-				continue
-			}
-	
-			packet := packet.Deserialize(buf[:n])
-			slog.Info("Received UDP message", "addr", addr, "packet", reflect.TypeOf(packet).Name(), "content", packet)
-			this.service.Enqueue(UDPMessage{packet: packet, addr: addrport, conn: this.conn})
-		}
-		
-		if err != nil {
-			if this.closed {
-				slog.Info("Closed UDP listener")
-				return
-			}
+			ans := make([]byte, n)
+			copy(ans, buf)
 
+			addrport := netip.MustParseAddrPort(addr.String())
+			this.output <- UDPPacket{Source: addrport, Conn: this.conn, Data: ans}
+		}
+
+		if this.closed {
+			slog.Info("Closed UDP listener")
+			close(this.output)
+			return
+		} else if err != nil {
 			slog.Error("Error receiving UDP message", "err", err)
 			continue
 		}

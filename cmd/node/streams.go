@@ -5,25 +5,34 @@ import (
 	"net/netip"
 
 	"github.com/SLP25/ESR/internal/utils"
+	"github.com/pion/sdp/v2"
 )
 
 
 type stream struct {
     from netip.Addr
+    toLocal uint16
     to utils.Set[netip.AddrPort]
     metadata utils.StreamMetadata
+    sdp sdp.SessionDescription
 }
 
 
 type streams map[string]*stream
 
-func (this streams) startSubscription(streamID string, resp positiveResponse, children []netip.AddrPort) {
+func (this streams) startSubscription(streamID string, resp positiveResponse, port uint16, sdp sdp.SessionDescription, children []netip.AddrPort) {
     if _, ok := this[streamID]; ok {
         slog.Error("startSubscription: called on existing streamID", "streamID", streamID)
         return
     }
 
-    this[streamID] = &stream{from: resp.from, to: utils.SetFrom(children...), metadata: resp.stream}
+    this[streamID] = &stream{
+        from: resp.from,
+        toLocal: port,
+        to: utils.SetFrom(children...),
+        metadata: resp.stream,
+        sdp: sdp,
+    }
 }
 
 func (this streams) endSubscription(streamID string) netip.Addr {

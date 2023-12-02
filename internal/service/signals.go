@@ -1,6 +1,7 @@
 package service
 
 import (
+	"bytes"
 	"log/slog"
 	"net"
 	"net/netip"
@@ -26,7 +27,7 @@ type Message interface {
 }
 
 type TCPConnected struct {
-	conn net.Conn
+	conn *connection
 }
 
 func (this TCPConnected) Addr() netip.AddrPort {
@@ -35,11 +36,12 @@ func (this TCPConnected) Addr() netip.AddrPort {
 
 func (this TCPConnected) Send(p packet.Packet) error {
 	slog.Info("Sending TCP message", "packet", reflect.TypeOf(p).Name(), "content", p, "addr", this.conn.RemoteAddr())
-	_, err := this.conn.Write(packet.Serialize(p))
+	_, err := packet.Serialize(p, this.conn)
 	return err
 }
 
 func (this TCPConnected) CloseConn() error {
+	this.conn.closed = true
 	return this.conn.Close()
 }
 
@@ -55,7 +57,7 @@ func (this TCPDisconnected) Addr() netip.AddrPort {
 
 type TCPMessage struct {
 	packet packet.Packet
-	conn net.Conn
+	conn *connection
 }
 
 func (this TCPMessage) Packet() packet.Packet {
@@ -67,18 +69,20 @@ func (this TCPMessage) Addr() netip.AddrPort {
 }
 
 func (this TCPMessage) SendResponse(p packet.Packet) error {
-	_, err := this.conn.Write(packet.Serialize(p))
-	slog.Info("Sending TCP message", "packet", reflect.TypeOf(p).Name(), "content", p, "addr", this.conn.RemoteAddr())
+	_, err := packet.Serialize(p, this.conn)
+	slog.Debug("Sending TCP message", "packet", reflect.TypeOf(p).Name(), "content", p, "addr", this.conn.RemoteAddr())
 	return err
 }
 
 func (this TCPMessage) CloseConn() error {
+	this.conn.closed = true
 	return this.conn.Close()
 }
 
 
 type UDPMessage struct {
 	packet packet.Packet
+	localPort uint16
 	addr netip.AddrPort
 	conn net.PacketConn
 }
@@ -87,13 +91,21 @@ func (this UDPMessage) Packet() packet.Packet {
 	return this.packet
 }
 
+func (this UDPMessage) LocalPort() uint16 {
+	return netip.MustParseAddrPort(this.conn.LocalAddr().String()).Port()
+}
+
 func (this UDPMessage) Addr() netip.AddrPort {
 	return this.addr
 }
 
 func (this UDPMessage) SendResponse(p packet.Packet) error {
-	_, err := this.conn.WriteTo(packet.Serialize(p), addr{network: "udp", addrport: this.addr})
-	slog.Info("Sending UDP message", "packet", reflect.TypeOf(p).Name(), "content", p, "addr", this.addr)
+	data := make([]byte, 35600)
+	buf := bytes.NewBuffer(data)
+	n, err := packet.Serialize(p, buf)
+
+	_, err = this.conn.WriteTo(data[:n], addr{network: "udp", addrport: this.addr})
+	slog.Debug("Sending UDP message", "packet", reflect.TypeOf(p).Name(), "content", p, "addr", this.addr)
 	return err
 }
 

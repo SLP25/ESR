@@ -13,7 +13,7 @@ import (
 	"github.com/SLP25/ESR/internal/utils"
 )
 
-var port uint16
+var tcpPort uint16
 var serv service.Service
 
 type bootstrapper struct {
@@ -22,7 +22,7 @@ type bootstrapper struct {
     mu sync.Mutex
 }
 
-func (this *bootstrapper) getConnectToIP() netip.AddrPort { //TODO: return error if fail
+func (this *bootstrapper) getConnectToIP() netip.AddrPort { //TODO: pick a good one instead of random
     this.mu.Lock()
     defer this.mu.Unlock()
     return utils.GetAnyValue(this.config.nodes, netip.AddrPortFrom(netip.IPv4Unspecified(), 0))
@@ -72,12 +72,12 @@ func main() {
         fmt.Println("Invalid port: the port must be an integer between 0 and 65535")
         return
     }
-    port = uint16(aux)
+    tcpPort = uint16(aux)
 
     bootstrapper := bootstrapper{config: MustReadConfig(os.Args[2])}
 
     serv.AddHandler(&bootstrapper)
-    err = serv.Run(&port, nil)
+    err = serv.Run(&tcpPort)
     if err != nil {
         slog.Error("Error running service", "err", err)
     }

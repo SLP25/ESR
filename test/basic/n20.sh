@@ -1,2 +1,2 @@
 sleep .2
-bin/server 6321 $BOOTADDR ${TESTDIR}serverConfig20.json
+bin/server 6321 ${TESTDIR}serverConfig20.json

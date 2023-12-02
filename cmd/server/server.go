@@ -6,7 +6,6 @@ import (
 	"net/netip"
 	"os"
 	"strconv"
-	"time"
 
 	"github.com/SLP25/ESR/internal/packet"
 	"github.com/SLP25/ESR/internal/service"
@@ -14,16 +13,14 @@ import (
 )
 
 
-var port uint16
+var tcpPort uint16
 var bootAddr netip.AddrPort
 var serv service.Service
 
 
 type server struct {
-    streams config
-    cancelStreams map[string] chan any
+    streams map[string]*stream
 }
-
 
 
 func (this *server) Handle(sig service.Signal) bool {
@@ -37,11 +34,7 @@ func (this *server) Handle(sig service.Signal) bool {
             p := msg.Packet().(packet.ProbeRequest)
 
             if s, ok := this.streams[p.StreamID]; ok {
-                slog.Debug("ProbeRequest", "file", s)
-                metadata := utils.StreamMetadata{Throughput: 10} //TODO: get throughput of stream
-                //TODO: if the connection doesn't have the bandwidth?
-
-                utils.Warn(msg.SendResponse(p.RespondExistant(metadata)))
+                utils.Warn(msg.SendResponse(p.RespondExistant(s.metadata)))
             } else {
                 utils.Warn(msg.SendResponse(p.RespondNonExistant()))
             }
@@ -51,40 +44,47 @@ func (this *server) Handle(sig service.Signal) bool {
             p := msg.Packet().(packet.StreamRequest)
             s, ok := this.streams[p.StreamID]
             if ok {
-                slog.Debug("StreamRequest", "file", s)
-                this.cancelStreams[p.StreamID] = make(chan any)
-                go func() {
-                    defer delete(this.cancelStreams, p.StreamID)
-
-                    end := time.After(300 * time.Second)
-
-                    //TODO
-                    for {
-                        serv.UDPServer().Send(packet.StreamPacket{StreamID: p.StreamID, Content:[]byte{1,2,3}}, netip.AddrPortFrom(msg.Addr().Addr(), p.Port))
-
-                        select {
-                        case <-this.cancelStreams[p.StreamID]:
-                            return
-                        case <-end:
-                            msg.SendResponse(packet.StreamEnd{StreamID: p.StreamID})
-                            return
-                        case <-time.After(1 * time.Second):
-                        }
-                    }
-                }()
-            } else {
-                utils.Warn(msg.SendResponse(packet.StreamEnd{}))
-                utils.Warn(msg.CloseConn())
+                session, err := s.setClient(netip.AddrPortFrom(msg.Addr().Addr(), p.Port))
+                if err == nil {
+                    utils.Warn(msg.SendResponse(packet.StreamResponse{StreamID: p.StreamID, RequestID: p.RequestID, SDP: session}))
+                    return true
+                } else {
+                    slog.Error("Error setting client for", "stream", s.streamID, "err", err)
+                }
             }
+
+            utils.Warn(msg.SendResponse(packet.StreamEnd{StreamID: p.StreamID}))
+            utils.Warn(msg.CloseConn())
+
             return true
 
         case packet.StreamCancel:
             p := msg.Packet().(packet.StreamCancel)
-            if c, ok := this.cancelStreams[p.StreamID]; ok {
-                c <- true
+
+            s, ok := this.streams[p.StreamID]
+            if !ok {
+                slog.Warn("StreamCancel: inexistent streamID")
+                return true
             }
+
+            if msg.Addr().Addr() != s.client.Addr() {
+                client := netip.AddrPortFrom(msg.Addr().Addr(), p.Port)
+                slog.Warn("Invalid StreamCancel: client not registered with given streamID", "addr", client, "streamID", p.StreamID)
+                return true
+            }
+
+            s.removeClient()
             return true
-        }    
+        }
+
+    case service.TCPDisconnected:
+        disc := sig.(service.TCPDisconnected)
+        for _,s := range this.streams {
+            if s.client.Addr() == disc.Addr().Addr() {
+                s.removeClient()
+            }
+        }
+        return true
     }
 
 	return false
@@ -93,8 +93,8 @@ func (this *server) Handle(sig service.Signal) bool {
 func main() {
     utils.SetupLogging()
 
-    if len(os.Args) != 4 {
-        fmt.Println("Usage: server <port> <bootAddr> <config>")
+    if len(os.Args) != 3 {
+        fmt.Println("Usage: server <port> <config>")
         return
     }
 
@@ -103,18 +103,18 @@ func main() {
         fmt.Println("Invalid port: the port must be an integer between 0 and 65535")
         return
     }
-    port = uint16(aux)
+    tcpPort = uint16(aux)
 
-    bootAddr, err = netip.ParseAddrPort(os.Args[2])
-    if err != nil {
-        fmt.Println("Invalid boot address:", err)
-        return
+    server := server{streams: make(map[string]*stream)}
+    for streamID, filepath := range MustReadConfig(os.Args[2]) {
+        server.streams[streamID], err = start(streamID, filepath, true)
+        if err != nil {
+            fmt.Printf("Error loading stream '%s': %s", streamID, err)
+        }
     }
 
-    server := server{streams: MustReadConfig(os.Args[3]), cancelStreams: make(map[string]chan any)}
-
     serv.AddHandler(&server)
-    err = serv.Run(&port, nil)
+    err = serv.Run(&tcpPort)
     if err != nil {
         slog.Error("Error running service", "err", err)
     }

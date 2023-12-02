@@ -15,5 +15,5 @@ func (this Metrics) BetterThan(m Metrics) bool {
 
 
 type StreamMetadata struct {
-	Throughput int
+	Throughput int //in bytes (as far as I know. I get it from ffprobe)
 }

@@ -20,18 +20,23 @@ type positiveResponse struct {
     stream utils.StreamMetadata
 }
 
+type waitingStream struct {
+    to utils.Set[netip.AddrPort]
+    localPort uint16
+}
 
-var localPort uint16
+
+var tcpPort uint16
 var bootAddr netip.AddrPort
 var serv service.Service
 
 type node struct {
     neighbours []netip.AddrPort //TODO: differenciate actual neighbours from supposed neighbours
-    servers []netip.AddrPort //TODO: same for the servers
-    probeRequests utils.Set[int]
-    probeResponses map[int]positiveResponse
+    servers []netip.AddrPort    //TODO: same for the servers
+    probeRequests utils.Set[int]                //TODO: erase after a while
+    probeResponses map[int]positiveResponse     //      same here (BUT! cant delete if there is a running/waiting stream)
     runningStreams streams
-    waitingStreams map[string]utils.Set[netip.AddrPort]
+    waitingStreams map[string]waitingStream
 }
 
 func (this *node) isRP() bool {
@@ -90,9 +95,16 @@ func (this *node) propagateProbeResponse(resp packet.ProbeResponse, ignore ...ne
 }
 
 func (this *node) cancelStream(streamID string, addr netip.Addr, port uint16) {
+    if waitingStream, ok := this.waitingStreams[streamID]; ok {
+        waitingStream.to.Remove(netip.AddrPortFrom(addr, port))
+        if waitingStream.to.Length() == 0 {
+            delete(this.waitingStreams, streamID)
+        }
+    }
+    
     if this.runningStreams.removeSubscriber(streamID, addr, port) {
         addr := this.runningStreams.endSubscription(streamID)
-        p := packet.StreamCancel{StreamID: streamID, Port: localPort}
+        p := packet.StreamCancel{StreamID: streamID, Port: tcpPort}
         utils.Warn(serv.TCPServer().Send(p, addr))
     }
 }
@@ -119,6 +131,9 @@ func (this *node) handleProbeRequest(req packet.ProbeRequest, source netip.Addr)
     }
 }
 
+//If a response is already registered for this requestID, this response is ignored
+//The response is stored and progagated.
+//Then, if there is a correspondent waiting stream, a StreamRequest is sent to this response's address
 func (this *node) handleProbeResponse(resp packet.ProbeResponse, source netip.Addr) {
     this.probeRequests.Add(resp.RequestID)
 
@@ -132,49 +147,60 @@ func (this *node) handleProbeResponse(resp packet.ProbeResponse, source netip.Ad
     
     this.propagateProbeResponse(resp, source)
 
-    if subs, ok := this.waitingStreams[resp.StreamID]; ok {
+    if waitingStream, ok := this.waitingStreams[resp.StreamID]; ok {
         if !resp.Exists { //we don't want to start a probe request if the stream doesn't exist
-            for addrport := range subs {
+            for addrport := range waitingStream.to {
                 utils.Warn(serv.TCPServer().Send(packet.StreamEnd{StreamID: resp.StreamID}, addrport.Addr()))
             }
+            delete(this.waitingStreams, resp.StreamID)
         } else {
-            this.handleStreamRequest(resp.StreamID, resp.RequestID, subs.ToSlice()...)
+            //receive "ghost" StreamRequest from all subscribers to the stream to propagate it upwards
+            this.handleStreamRequest(resp.StreamID, resp.RequestID, waitingStream.to.ToSlice()...)
         }
 
         delete(this.waitingStreams, resp.StreamID)
     }
 }
 
+
 func (this *node) handleStreamRequest(streamID string, requestID int, dests ...netip.AddrPort) {
     if len(dests) == 0 {
-        slog.Error("handleStreamRequest: called with no dests")
+        slog.Warn("handleStreamRequest: called with no dests")
         return
     }
     
     if resp, ok := this.probeResponses[requestID]; ok {
 
-        if s, ok := this.runningStreams[streamID]; !ok {
-            p := packet.StreamRequest{StreamID: streamID, RequestID: requestID, Port: localPort}
+        if s, ok := this.runningStreams[streamID]; ok {
+            for _, addrport := range dests {
+                s.to.Add(addrport)
+                serv.TCPServer().Send(packet.StreamResponse{SDP: s.sdp}, addrport.Addr())
+            }            
+        } else if w, ok := this.waitingStreams[streamID]; ok {
+            for _, addrport := range dests {
+                w.to.Add(addrport)
+            }
+        } else {
+            var port uint16
+            utils.Warn(serv.AddUDPServer(&port))
+
+            p := packet.StreamRequest{StreamID: streamID, RequestID: requestID, Port: port}
             err := serv.TCPServer().Send(p, resp.from)
             if err != nil {
                 slog.Error("Unable to propagate StreamRequest", "err", err)
                 return
             }
 
-            this.runningStreams.startSubscription(streamID, resp, dests)
-        } else {
-            for _, addrport := range dests {
-                s.to.Add(addrport)
-            }
+            this.waitingStreams[streamID] = waitingStream{to: utils.SetFrom[netip.AddrPort](dests...), localPort: port}
         }
         
     } else if !this.probeRequests.Contains(requestID) {
         for _, addrPort := range dests {
             if _, ok := this.waitingStreams[streamID]; !ok {
-                this.waitingStreams[streamID] = utils.EmptySet[netip.AddrPort]()
+                this.waitingStreams[streamID] = waitingStream{to: utils.EmptySet[netip.AddrPort]()}
             }
             
-            this.waitingStreams[streamID].Add(addrPort)
+            this.waitingStreams[streamID].to.Add(addrPort)
         }
         
         req := packet.ProbeRequest{StreamID: streamID, RequestID: requestID}
@@ -225,14 +251,14 @@ func (this *node) Handle(sig service.Signal) bool {
         //cancel unused stream
         for _, streamID := range dests {
             addr := this.runningStreams.endSubscription(streamID)
-            p := packet.StreamCancel{StreamID: streamID, Port: localPort}
+            p := packet.StreamCancel{StreamID: streamID, Port: tcpPort}
             utils.Warn(serv.TCPServer().Send(p, addr))
         }
 
         //re-request unavailable streams
         for streamID, addrPorts := range sources {
             randInt := rand.New(rand.NewSource(time.Now().UnixNano())).Int()
-            //we use goroutines in order to not have to wait in case a response is awaited
+            //we use goroutines in order to run all requests in parallel (TODO: controlo de concorrencia)
             go this.handleStreamRequest(streamID, randInt, addrPorts...)
         }
 
@@ -257,6 +283,20 @@ func (this *node) Handle(sig service.Signal) bool {
             this.handleStreamRequest(p.StreamID, p.RequestID, netip.AddrPortFrom(msg.Addr().Addr(), p.Port))
             return true
 
+        case packet.StreamResponse:
+            p := msg.Packet().(packet.StreamResponse)
+
+            if resp, ok := this.probeResponses[p.RequestID]; ok {
+                if w, ok := this.waitingStreams[p.StreamID]; ok {
+                    this.runningStreams.startSubscription(p.StreamID, resp, w.localPort, p.SDP, w.to.ToSlice())
+                    for addrport := range w.to {
+                        utils.Warn(serv.TCPServer().Send(packet.StreamResponse{}, addrport.Addr()))
+                    }
+                }
+            }
+
+            return true
+
         case packet.StreamCancel:
             p := msg.Packet().(packet.StreamCancel)
             this.cancelStream(p.StreamID, msg.Addr().Addr(), p.Port)
@@ -275,6 +315,7 @@ func (this *node) Handle(sig service.Signal) bool {
             }
 
             //locally remove the subscription
+            delete(this.waitingStreams, p.StreamID)
             this.runningStreams.endSubscription(p.StreamID)
 
             return true
@@ -287,8 +328,8 @@ func (this *node) Handle(sig service.Signal) bool {
         case packet.StreamPacket:
             p := msg.Packet().(packet.StreamPacket)
 
-            for addr := range this.runningStreams[p.StreamID].to { //TODO: crash if not initialized (see if this could happen elsewhere)
-                utils.Warn(serv.UDPServer().Send(p, addr))
+            for addr := range this.runningStreams[p.StreamID].to { //TODO: fix crash if not initialized (see if this could happen elsewhere)
+                utils.Warn(service.SendUDP(p, addr))
             }
             return true
         }
@@ -310,7 +351,7 @@ func main() {
         fmt.Println("Invalid port: the port must be an integer between 0 and 65535")
         return
     }
-    localPort = uint16(aux)
+    tcpPort = uint16(aux)
 
     bootAddr, err = netip.ParseAddrPort(os.Args[2])
     if err != nil {
@@ -318,10 +359,15 @@ func main() {
         return
     }
 
-    node := node{probeRequests: utils.EmptySet[int](), probeResponses: make(map[int]positiveResponse), runningStreams: make(streams), waitingStreams: make(map[string]utils.Set[netip.AddrPort])}
+    node := node{
+        probeRequests: utils.EmptySet[int](),
+        probeResponses: make(map[int]positiveResponse),
+        runningStreams: make(streams),
+        waitingStreams: make(map[string]utils.Set[netip.AddrPort]),
+    }
     serv.AddHandler(&node)
     
-    err = serv.Run(&localPort, &localPort)
+    err = serv.Run(&tcpPort)
     if err != nil {
         slog.Error("Error running service", "err", err)
     }
