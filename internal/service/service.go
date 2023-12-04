@@ -18,8 +18,13 @@ type Handler interface {
 	Handle(Signal) bool
 }
 
+type handlerNode struct {
+	Handler
+	removed bool
+}
+
 type Service struct {
-	handlers []Handler	//TODO: controlo de concorrencia
+	handlers []*handlerNode
 	handlersMutex sync.Mutex
 	udpServers map[uint16]*UDPServer
 	tcpServer TCPServer
@@ -27,6 +32,7 @@ type Service struct {
 	paused sync.WaitGroup
 	handling sync.WaitGroup
 	closed bool
+	closing sync.Mutex
 }
 
 func (this *Service) TCPServer() *TCPServer {
@@ -58,12 +64,20 @@ func (this *Service) AddUDPServer(port *uint16) error {
 			}
 
 			localPort := netip.MustParseAddrPort(msg.Conn.LocalAddr().String()).Port()
-			slog.Debug("Received UDP message", "addr", msg.Source, "packet", reflect.TypeOf(packet).Name(), "content", utils.Ellipsis(packet, 250))
+			slog.Debug("Received UDP message", "addr", msg.Source, "packet", reflect.TypeOf(packet).Name(), "content", utils.Ellipsis(packet, 50))
 			this.sigQueue <- UDPMessage{packet: packet, localPort: localPort, addr: msg.Source, conn: msg.Conn}
 		}
 	}()
 	this.udpServers[*port] = &server
 	return nil
+}
+
+func (this *Service) RemoveUDPServer(port uint16) error {
+	if server, ok := this.udpServers[port]; ok {
+		return server.Close()
+	} else {
+		return errors.New(fmt.Sprint("service.RemoveUDPServer(): called on closed port", port))
+	}
 }
 
 //returns when all Handles return
@@ -107,13 +121,19 @@ func (this *Service) Run(tcpPort *uint16, udpPorts... *uint16) error {
 }
 
 func (this *Service) Close() {
-	if !this.closed { //TODO: mutex?
+	this.closing.Lock()
+	defer this.closing.Unlock()
+
+	if !this.closed {
 		this.closed = true
 		close(this.sigQueue)
 	}
 }
 
 func (this *Service) Enqueue(s Signal) bool {
+	this.closing.Lock()
+	defer this.closing.Unlock()
+	
 	if !this.closed {
 		this.sigQueue <- s
 	}
@@ -122,14 +142,14 @@ func (this *Service) Enqueue(s Signal) bool {
 }
 
 func (this *Service) AddHandler(h Handler) {
-	this.handlers = append(this.handlers, h)
+	this.handlers = append(this.handlers, &handlerNode{h, false})
 }
 
 // Removes the topmost instance of the specified handler from the handler stack
 func (this *Service) RemoveHandler(h Handler) bool {
 
 	for i := len(this.handlers)-1; i >= 0; i-- {
-		if this.handlers[i] == h {
+		if this.handlers[i].Handler == h {
 			this.handlers = append(this.handlers[:i], this.handlers[i+1:]...)
 			return true
 		}
@@ -156,12 +176,13 @@ func (this *Service) handle(sig Signal) {
 	this.handling.Add(1)
 	defer this.handling.Add(-1)
 
-	//this.handlersMutex.Lock()
-	//TODO
-	//this.handlersMutex.Unlock()
+	this.handlersMutex.Lock()
+	handlers := make([]*handlerNode, len(this.handlers))
+	copy(handlers, this.handlers)
+	this.handlersMutex.Unlock()
 
-	for i := len(this.handlers)-1; i >= 0; i-- { //TODO: loop sus (concorrencia)
-		if (this.handlers[i].Handle(sig)) {
+	for i := len(handlers)-1; i >= 0; i-- {
+		if (!handlers[i].removed && handlers[i].Handle(sig)) {
 			return
 		}
 	}

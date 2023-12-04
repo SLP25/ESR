@@ -26,7 +26,7 @@ type UDPServer struct {
 
 // Sends a packet to specified remote address
 func SendUDP(p packet.Packet, address netip.AddrPort) error {
-	slog.Debug("Sending UDP message", "packet", reflect.TypeOf(p).Name(), "content", utils.Ellipsis(p, 250), "addr", address)
+	slog.Debug("Sending UDP message", "packet", reflect.TypeOf(p).Name(), "content", utils.Ellipsis(p, 50), "addr", address)
 	
 	conn, err := net.Dial("udp", address.String())
 	if err != nil { return err }

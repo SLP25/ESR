@@ -8,6 +8,10 @@ import (
 	"github.com/pion/sdp/v2"
 )
 
+type waitingStream struct {
+    to utils.Set[netip.AddrPort]
+    localPort uint16
+}
 
 type stream struct {
     from netip.Addr
@@ -16,7 +20,6 @@ type stream struct {
     metadata utils.StreamMetadata
     sdp sdp.SessionDescription
 }
-
 
 type streams map[string]*stream
 
@@ -35,10 +38,20 @@ func (this streams) startSubscription(streamID string, resp positiveResponse, po
     }
 }
 
-func (this streams) endSubscription(streamID string) netip.Addr {
+func (this streams) ForwardAddresses(localPort uint16) []netip.AddrPort {
+    for _, stream := range this {
+        if localPort == stream.toLocal {
+            return stream.to.ToSlice()
+        }
+    }
+    return make([]netip.AddrPort, 0)
+}
+
+func (this streams) endSubscription(streamID string) (netip.Addr, uint16) {
     addr := this[streamID].from
+    port := this[streamID].toLocal
     delete(this, streamID)
-    return addr
+    return addr, port
 }
 
 //returns true if the addr was the last subscriber for that stream
@@ -51,18 +64,18 @@ func (this streams) removeSubscriber(streamID string, addr netip.Addr, port uint
 }
 
 //returns the streams where the addr was the source and the streamIDs which became empty
-func (this streams) eraseAddr(addr netip.Addr) (map[string][]netip.AddrPort, []string) {
-    fromSubs := make(map[string][]netip.AddrPort)
-    emptyToSubs := make([]string, 0)
+func (this streams) eraseAddr(addr netip.Addr) (map[string]waitingStream, map[string]uint16) {
+    fromSubs := make(map[string]waitingStream)
+    emptyToSubs := make(map[string]uint16, 0)
     
     for streamID, stream := range this {
         if stream.from == addr {
-            fromSubs[streamID] = utils.GetKeys(stream.to)
+            fromSubs[streamID] = waitingStream{to: stream.to, localPort: stream.toLocal} 
             delete(this, streamID)
         } else {
             for addrport := range stream.to {
                 if addrport.Addr() == addr && this.removeSubscriber(streamID, addrport.Addr(), addrport.Port()) {
-                    emptyToSubs = append(emptyToSubs, streamID)
+                    emptyToSubs[streamID] = stream.toLocal
                 }
             }
         }
@@ -71,18 +84,18 @@ func (this streams) eraseAddr(addr netip.Addr) (map[string][]netip.AddrPort, []s
     return fromSubs, emptyToSubs
 }
 
-//Returns the sums of the throughput of all streams running to and from the given address
+//Returns the sums of the bitrate of all streams running to and from the given address
 func (this streams) connUsage(addr netip.Addr) int {
     total := 0
 
     for _, stream := range this {
         if addr == stream.from {
-            total += stream.metadata.Throughput
+            total += stream.metadata.Bitrate
         }
 
         for addrport := range stream.to {
             if addrport.Addr() == addr {
-                total += stream.metadata.Throughput
+                total += stream.metadata.Bitrate
             }
         }
     }

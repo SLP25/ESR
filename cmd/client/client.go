@@ -6,7 +6,6 @@ import (
 	"math/rand"
 	"net/netip"
 	"os"
-	"sync"
 	"time"
 
 	"github.com/SLP25/ESR/internal/packet"
@@ -22,7 +21,6 @@ var serv service.Service
 type client struct {
     accessNode netip.AddrPort
     player *player
-    playerMutex sync.Mutex
 }
 
 func (this *client) Handle(sig service.Signal) bool {

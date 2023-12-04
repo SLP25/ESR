@@ -54,11 +54,11 @@ func start(streamID string, filepath string, loop bool) (*stream, error) {
 		d, err := strconv.ParseFloat(s.Duration, 64)
 		if err != nil { return nil, err }
 
-		t, err := strconv.Atoi(s.BitRate)
+		b, err := strconv.Atoi(s.BitRate)
 		if err != nil { return nil, err }
 
 		stream.duration = max(stream.duration, time.Duration(d * 1000000000))
-		stream.metadata.Throughput += t
+		stream.metadata.Bitrate += b
 	}
 
 	return stream, nil

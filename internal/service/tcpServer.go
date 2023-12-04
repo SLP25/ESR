@@ -50,7 +50,7 @@ func (this *TCPServer) Connect(addr netip.AddrPort) error {
 // Sends a packet to the specified remote address.
 // If the connection wasn't established beforehand, the operation fails
 func (this *TCPServer) Send(p packet.Packet, addr netip.Addr) error {
-	slog.Debug("Sending TCP message", "packet", reflect.TypeOf(p).Name(), "content", utils.Ellipsis(p, 250), "addr", addr)
+	slog.Debug("Sending TCP message", "packet", reflect.TypeOf(p).Name(), "content", utils.Ellipsis(p, 50), "addr", addr)
 
 	this.connsMutex.RLock()
 	defer this.connsMutex.RUnlock()
@@ -213,7 +213,7 @@ func (this *TCPServer) handleConnection(c *connection) {
 			return
 		}
 
-		slog.Debug("Received TCP message", "addr", c.RemoteAddr(), "packet", reflect.TypeOf(packet).Name(), "content", utils.Ellipsis(packet, 250))
+		slog.Debug("Received TCP message", "addr", c.RemoteAddr(), "packet", reflect.TypeOf(packet).Name(), "content", utils.Ellipsis(packet, 50))
 		this.sendOutput(TCPMessage{packet: packet, conn: c})
 	}
 }
