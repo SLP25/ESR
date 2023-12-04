@@ -7,6 +7,7 @@ import (
 	"net/netip"
 	"os"
 	"strconv"
+	"encoding/binary"
 )
 
 type ServiceType byte
@@ -71,4 +72,17 @@ func FindFreePorts(n int) []uint16 {
 	}
 	
 	return ans
+}
+
+func IPPortToInt(ip netip.AddrPort) uint32 {
+	bytes := ip.Addr().As4()
+	return binary.BigEndian.Uint32(bytes[0:4])
+}
+
+func AbsDiff(val1 uint32, val2 uint32) uint32 {
+	if val1 < val2 {
+		return val2 - val1
+	} else {
+		return val1 - val2
+	}
 }

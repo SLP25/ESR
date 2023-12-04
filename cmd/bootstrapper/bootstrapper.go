@@ -22,10 +22,25 @@ type bootstrapper struct {
     mu sync.Mutex
 }
 
-func (this *bootstrapper) getConnectToIP() netip.AddrPort { //TODO: pick a good one instead of random
+func (this *bootstrapper) getConnectToIP(client netip.AddrPort) netip.AddrPort { //TODO: pick a good one instead of random
     this.mu.Lock()
     defer this.mu.Unlock()
-    return utils.GetAnyValue(this.config.nodes, netip.AddrPortFrom(netip.IPv4Unspecified(), 0))
+
+    closestIP := netip.AddrPortFrom(netip.IPv4Unspecified(), 0)
+    clientVal := utils.IPPortToInt(client)
+    minDiff   := uint32(4294967295)
+
+    for _, ip := range this.config.nodes {
+        valCur := utils.IPPortToInt(ip)
+        diff := utils.AbsDiff(valCur, clientVal)
+
+        if diff < minDiff {
+            closestIP = ip
+            minDiff = diff
+        }
+    }
+
+    return closestIP
 }
 
 func (this *bootstrapper) Handle(sig service.Signal) bool {
@@ -40,7 +55,7 @@ func (this *bootstrapper) Handle(sig service.Signal) bool {
             req := msg.Packet().(packet.StartupRequest)
             switch req.Service {
             case utils.Client:
-                utils.Warn(msg.SendResponse(packet.StartupResponseClient{ConnectTo: this.getConnectToIP()}))
+                utils.Warn(msg.SendResponse(packet.StartupResponseClient{ConnectTo: this.getConnectToIP(msg.Addr())}))
                 utils.Warn(msg.CloseConn())
                 return true
             case utils.Node:
