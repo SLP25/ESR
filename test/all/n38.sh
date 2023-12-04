@@ -1,1 +1,0 @@
-bin/bootstrapper 6321 ${TESTDIR}bootConfig.json

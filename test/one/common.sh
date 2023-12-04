@@ -1,1 +1,1 @@
-export BOOTADDR="10.0.0.10:6321"
+export BOOTADDR="10.0.1.1:6321"
