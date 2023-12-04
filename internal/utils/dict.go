@@ -14,14 +14,6 @@ func GetAnyKey[K comparable, V any](dict map[K]V, defaultKey K) K {
 	return defaultKey
 }
 
-func GetAnyValue[K comparable, V any](dict map[K]V, defaultVal V) V {
-	for _, v := range dict {
-		return v
-	}
-
-	return defaultVal
-}
-
 func GetKeys[K comparable, V any](dict map[K]V) []K {
 	keys := make([]K, len(dict))
 
