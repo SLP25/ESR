@@ -1,0 +1,1 @@
+export BOOTADDR="10.0.10.20:6321"
