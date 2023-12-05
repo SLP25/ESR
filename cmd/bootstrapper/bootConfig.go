@@ -79,15 +79,18 @@ func MustReadConfig(filename string) config {
 					panic("Self-loop in boot config not allowed")
 				}
 				
-				var metrics utils.Metrics
 				marshaled, err := json.Marshal(aux)
+				if err != nil {
+					panic(fmt.Sprintf("Error deserializing metrics in node %s<->%s: %s", edge.first, edge.second, err.Error()))
+				}
+
+				var metrics utils.Metrics
+				err = json.Unmarshal(marshaled, &metrics)
 				if err != nil {
 					panic(fmt.Sprintf("Error deserializing metrics in node %s<->%s: %s", edge.first, edge.second, err.Error()))
 				} else if metrics.Bandwidth == 0 {
 					panic(fmt.Sprintf("Invalid value for Bandwidth: 0. Did you forget to specify the Bandwidth for edge %s<->%s?", edge.first, edge.second))
 				}
-
-				json.Unmarshal(marshaled, &metrics)
 				config.edges[edge] = metrics
 				done = true
 			}
