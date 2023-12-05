@@ -19,14 +19,18 @@ type positiveResponse struct {
     stream utils.StreamMetadata
 }
 
+type neighbourInfo struct {
+    port uint16
+    metrics utils.Metrics
+}
 
 var tcpPort uint16
 var bootAddr netip.AddrPort
 var serv service.Service
 
 type node struct {
-    neighbours []netip.AddrPort //TODO: differenciate actual neighbours from supposed neighbours
-    servers []netip.AddrPort    //TODO: same for the servers
+    neighbours map[netip.Addr]neighbourInfo
+    servers []netip.AddrPort
     probeRequests utils.Set[int]                //TODO: erase after a while
     probeResponses map[int]positiveResponse     //      same here (BUT! cant delete if there is a running/waiting stream)
     runningStreams streams                      //This node is currently receiving and sending packets for these streams
@@ -40,13 +44,17 @@ func (this *node) isRP() bool {
 //Probes all servers and waits for their response.
 //Returns the positive response from the server with the best connection metrics
 func (this *node) probeServers(req packet.ProbeRequest) (packet.ProbeResponse, netip.Addr) {
-    //TODO: make requests in parallel
+    answers := make(map[netip.AddrPort]<-chan service.Signal)
+    
     for _, s := range this.servers {
-        var ans <-chan service.Signal
-
         serv.PauseHandleWhile(func() {
-            serv.TCPServer().Send(req, s.Addr())
-            ans = service.Intercept(&serv, func(sig service.Signal) bool {
+            err := serv.TCPServer().SendConnect(req, s)
+            if err != nil {
+                slog.Warn("Unable to connect to server", "addr", s, "err", err)
+                return
+            }
+
+            answers[s] = service.Intercept(&serv, func(sig service.Signal) bool {
                 msg, ok := sig.(service.TCPMessage)
                 if !ok { return false }
                 
@@ -56,34 +64,43 @@ func (this *node) probeServers(req packet.ProbeRequest) (packet.ProbeResponse, n
                 return msg.Addr().Addr() == s.Addr() && resp.RequestID == req.RequestID
             }, 1)
         })
-        
-        //TODO: compare metrics of multiple servers instead of picking just one
-        resp := (<-ans).(service.TCPMessage).Packet().(packet.ProbeResponse)
+    }
+
+    bestServer := netip.AddrPortFrom(netip.IPv4Unspecified(), 0)
+    bestResponse := req.RespondNonExistant()
+
+    for s, c := range answers {
+        resp := (<-c).(service.TCPMessage).Packet().(packet.ProbeResponse)
         if resp.Exists {
+            //TODO: compare metrics
+            //if this.metrics[s].BetterThan(this.metrics[bestServer]) {
+            //    bestServer = s
+            //    bestResponse = resp
+            //}
             return resp, s.Addr()
         }
     }
 
-    return req.RespondNonExistant(), netip.IPv4Unspecified()
+    return bestResponse, bestServer.Addr()
 }
 
 func (this *node) fitsAditional(bitrate int, addr netip.Addr) bool {
-    return true //TODO: this.runningStreams.connUsage(addr) + throughput < ...
+    return this.runningStreams.connUsage(addr) + bitrate < this.neighbours[addr].metrics.Bandwidth
 }
 
 
 func (this *node) propagateProbeRequest(req packet.ProbeRequest, ignore ...netip.Addr) {
-    for _, n := range this.neighbours {
-        if !utils.Contains(ignore, n.Addr()) {
-            utils.Warn(serv.TCPServer().Send(req, n.Addr()))
+    for addr, ni := range this.neighbours {
+        if !utils.Contains(ignore, addr) {
+            utils.Warn(serv.TCPServer().SendConnect(req, netip.AddrPortFrom(addr, ni.port)))
         }
     }
 }
 
 func (this *node) propagateProbeResponse(resp packet.ProbeResponse, ignore ...netip.Addr) {
-    for _, n := range this.neighbours {
-        if !utils.Contains(ignore, n.Addr()) && this.fitsAditional(resp.Stream.Bitrate, n.Addr()) {
-            utils.Warn(serv.TCPServer().Send(resp, n.Addr()))
+    for addr, ni := range this.neighbours {
+        if !utils.Contains(ignore, addr) && this.fitsAditional(resp.Stream.Bitrate, addr) {
+            utils.Warn(serv.TCPServer().SendConnect(resp, netip.AddrPortFrom(addr, ni.port)))
         }
     }
 }
@@ -238,10 +255,11 @@ func (this *node) Handle(sig service.Signal) bool {
 
         utils.Warn(serv.TCPServer().CloseConn(bootAddr.Addr()))
 
-        this.neighbours = response.Neighbours
-        for _, n := range response.Neighbours {
-            err := serv.TCPServer().Connect(n)
+        this.neighbours = make(map[netip.Addr]neighbourInfo)
+        for n, m := range response.Neighbours {
+            this.neighbours[n.Addr()] = neighbourInfo{port: n.Port(), metrics: m}
 
+            err := serv.TCPServer().Connect(n)
             if err != nil {
                 slog.Warn("Unable to connect to neighbour node", "err", err)
                 //TODO: retry? or wait for them to initiate?
@@ -249,15 +267,6 @@ func (this *node) Handle(sig service.Signal) bool {
         }
 
         this.servers = response.Servers
-        for _, s := range response.Servers {
-            err := serv.TCPServer().Connect(s)
-
-            if err != nil {
-                slog.Error("Unable to connect to server", "err", err)
-                //TODO: retry connection every once in a while
-            }
-        }
-
         return true
 
     case service.TCPDisconnected:

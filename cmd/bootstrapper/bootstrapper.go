@@ -22,7 +22,7 @@ type bootstrapper struct {
     mu sync.Mutex
 }
 
-func (this *bootstrapper) getConnectToIP(client netip.AddrPort) netip.AddrPort { //TODO: pick a good one instead of random
+func (this *bootstrapper) getConnectToIP(client netip.AddrPort) netip.AddrPort {
     this.mu.Lock()
     defer this.mu.Unlock()
 

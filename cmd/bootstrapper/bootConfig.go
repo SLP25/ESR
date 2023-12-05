@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/netip"
 	"os"
 	"slices"
@@ -81,7 +82,9 @@ func MustReadConfig(filename string) config {
 				var metrics utils.Metrics
 				marshaled, err := json.Marshal(aux)
 				if err != nil {
-					panic(err.Error())
+					panic(fmt.Sprintf("Error deserializing metrics in node %s<->%s: %s", edge.first, edge.second, err.Error()))
+				} else if metrics.Bandwidth == 0 {
+					panic(fmt.Sprintf("Invalid value for Bandwidth: 0. Did you forget to specify the Bandwidth for edge %s<->%s?", edge.first, edge.second))
 				}
 
 				json.Unmarshal(marshaled, &metrics)
@@ -113,20 +116,20 @@ func (this *config) getName(node netip.Addr) (string, error) {
 	return "", errors.New(node.String() + " not in boot config")
 } 
 
-func (this *config) getNeighbours(node netip.Addr) ([]netip.AddrPort, error) {
+func (this *config) getNeighbours(node netip.Addr) (map[netip.AddrPort]utils.Metrics, error) {
 	n, err := this.getName(node)
-	neighbours := make([]netip.AddrPort,0)
+	neighbours := make(map[netip.AddrPort]utils.Metrics)
 
 	if err != nil {
 		return neighbours, err
 	}
 
 
-	for edge := range this.edges {
+	for edge, metrics := range this.edges {
 		if edge.first == n {
-			neighbours = append(neighbours, this.nodes[edge.second])
+			neighbours[this.nodes[edge.second]] = metrics
 		} else if edge.second == n {
-			neighbours = append(neighbours, this.nodes[edge.first])
+			neighbours[this.nodes[edge.first]] = metrics
 		}
 	}
 

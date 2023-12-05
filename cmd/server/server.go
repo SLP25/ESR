@@ -107,9 +107,12 @@ func main() {
 
     server := server{streams: make(map[string]*stream)}
     for streamID, filepath := range MustReadConfig(os.Args[2]) {
-        server.streams[streamID], err = start(streamID, filepath, true)
+        metadata, err := start(streamID, filepath, true)
+        
         if err != nil {
             fmt.Printf("Error loading stream '%s': %s", streamID, err)
+        } else {
+            server.streams[streamID] = metadata
         }
     }
 

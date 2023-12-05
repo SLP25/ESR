@@ -18,6 +18,6 @@ type StartupResponseClient struct {
 
 //bootstrapper -> node
 type StartupResponseNode struct {
-	Neighbours []netip.AddrPort
+	Neighbours map[netip.AddrPort]utils.Metrics
 	Servers []netip.AddrPort
 }
