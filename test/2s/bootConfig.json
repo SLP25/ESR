@@ -21,79 +21,79 @@
     "edges": [
         {
             "n0":"n1",
-            "throughput": 1000
+            "Bandwidth": 1000000000
         },
         {
             "n0":"n3",
-            "throughput": 1000
+            "Bandwidth": 1000000000
         },
         {
             "n0":"n4",
-            "throughput": 1000
+            "Bandwidth": 1000000000
         },
         {
             "n1":"n4",
-            "throughput": 1000
+            "Bandwidth": 1000000000
         },
         {
             "n1":"n5",
-            "throughput": 1000
+            "Bandwidth": 1000000000
         },
         {
             "n1":"n2",
-            "throughput": 1000
+            "Bandwidth": 1000000000
         },
         {
             "n2":"n5",
-            "throughput": 1000
+            "Bandwidth": 1000000000
         },
         {
             "n2":"n6",
-            "throughput": 1
+            "Bandwidth": 10000
         },
         {
             "n2":"lost",
-            "throughput": 1000
+            "Bandwidth": 1000000000
         },
         {
             "n3":"n4",
-            "throughput": 1000
+            "Bandwidth": 1000000000
         },
         {
             "n3":"n7",
-            "throughput": 1000
+            "Bandwidth": 1000000000
         },
         {
             "n4":"n5",
-            "throughput": 1000
+            "Bandwidth": 1000000000
         },
         {
             "n4":"n7",
-            "throughput": 1000
+            "Bandwidth": 1000000000
         },
         {
             "n4":"n8",
-            "throughput": 1000
+            "Bandwidth": 1000000000
         },
         {
             "n5":"n6",
-            "throughput": 1000
+            "Bandwidth": 1000000000
         },
         {
             "n5":"n8",
-            "throughput": 1000
+            "Bandwidth": 1000000000
         },
         {
             "n5":"n9",
-            "throughput": 1000
+            "Bandwidth": 1000000000
         },
         {
             "n7":"n8",
-            "throughput": 1000
+            "Bandwidth": 1000000000
         },
         {
             "n8":"n9",
-            "throughput": 1000
+            "Bandwidth": 1000000000
         }
     ],
     
