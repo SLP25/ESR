@@ -2,11 +2,9 @@ package main
 
 import (
 	"log/slog"
-	"math/rand"
 	"net/netip"
 	"os"
 	"strconv"
-	"time"
 
 	"github.com/SLP25/ESR/internal/packet"
 	"github.com/SLP25/ESR/internal/service"
@@ -14,9 +12,9 @@ import (
 )
 
 
-type positiveResponse struct {
+type probeResponse struct {
     from netip.Addr
-    stream utils.StreamMetadata
+    stream *utils.StreamMetadata
 }
 
 type neighbourInfo struct {
@@ -31,8 +29,8 @@ var serv service.Service
 type node struct {
     neighbours map[netip.Addr]neighbourInfo
     servers []netip.AddrPort
-    probeRequests utils.Set[int]                //TODO: erase after a while
-    probeResponses map[int]positiveResponse     //      same here (BUT! cant delete if there is a running/waiting stream)
+    probeRequests utils.Set[uint32]                //TODO: erase after a while
+    probeResponses map[uint32]probeResponse     //      same here (BUT! cant delete if there is a running/waiting stream)
     runningStreams streams                      //This node is currently receiving and sending packets for these streams
     waitingStreams map[string]*waitingStream     //This node is currently waiting for a StreamResponse for these streams
 }
@@ -84,7 +82,7 @@ func (this *node) probeServers(req packet.ProbeRequest) (packet.ProbeResponse, n
     return bestResponse, bestServer.Addr()
 }
 
-func (this *node) fitsAditional(bitrate int, addr netip.Addr) bool {
+func (this *node) fitsAditional(bitrate int, addr netip.Addr) bool { //TODO: also look at waitingStreams?
     return this.runningStreams.connUsage(addr) + bitrate < this.neighbours[addr].metrics.Bandwidth
 }
 
@@ -163,7 +161,9 @@ func (this *node) handleProbeResponse(resp packet.ProbeResponse, source netip.Ad
     }
 
     if resp.Exists {
-        this.probeResponses[resp.RequestID] = positiveResponse{from: source, stream: resp.Stream}
+        this.probeResponses[resp.RequestID] = probeResponse{from: source, stream: &resp.Stream}
+    } else {
+        this.probeResponses[resp.RequestID] = probeResponse{from: source, stream: nil}
     }
     
     this.propagateProbeResponse(resp, source)
@@ -184,7 +184,7 @@ func (this *node) handleProbeResponse(resp packet.ProbeResponse, source netip.Ad
 }
 
 
-func (this *node) handleStreamRequest(streamID string, requestID int, dests ...netip.AddrPort) {    
+func (this *node) handleStreamRequest(streamID string, requestID uint32, dests ...netip.AddrPort) {    
     //fmt.Println("Processing stream request")
     
     if len(dests) == 0 {
@@ -192,14 +192,18 @@ func (this *node) handleStreamRequest(streamID string, requestID int, dests ...n
         return
     }
     
-    if resp, ok := this.probeResponses[requestID]; ok {
-        if s, ok := this.runningStreams[streamID]; ok {
+    if s, ok := this.runningStreams[streamID]; ok {
+        for _, addrport := range dests {
+            s.to.Add(addrport)
+            utils.Warn(serv.TCPServer().Send(packet.StreamResponse{SDP: s.sdp}, addrport.Addr()))
+        }
+    } else if resp, ok := this.probeResponses[requestID]; ok {
+        if resp.stream == nil {
             for _, addrport := range dests {
                 s.to.Add(addrport)
-                serv.TCPServer().Send(packet.StreamResponse{SDP: s.sdp}, addrport.Addr())
+                utils.Warn(serv.TCPServer().Send(packet.StreamEnd{StreamID: streamID}, addrport.Addr()))
             }
         } else {
-
             //fmt.Println("Add addrport to waitingStreams")
 
             if _, ok := this.waitingStreams[streamID]; !ok {
@@ -287,7 +291,7 @@ func (this *node) Handle(sig service.Signal) bool {
             //fmt.Println("Re-request unavailable stream")
 
             this.waitingStreams[streamID] = &waiting
-            randInt := rand.New(rand.NewSource(time.Now().UnixNano())).Int()
+            randInt := utils.RandID()
             //we use goroutines in order to run all requests in parallel (TODO: controlo de concorrencia)
             go this.handleStreamRequest(streamID, randInt, waiting.to.ToSlice()...)
         }
@@ -319,7 +323,9 @@ func (this *node) Handle(sig service.Signal) bool {
             //fmt.Println("Processing StreamResponse", p)
 
             if resp, ok := this.probeResponses[p.RequestID]; ok {
-                if w, ok := this.waitingStreams[p.StreamID]; ok && w.localPort != 0 {
+                if resp.stream == nil {
+                    slog.Warn("Received StreamResponse for non-existant stream", "streamID", p.StreamID, "requestID", p.RequestID)
+                } else if w, ok := this.waitingStreams[p.StreamID]; ok && w.localPort != 0 {
                     //fmt.Println("Adding stream to runningStreams and removing from waitingStreams", w)
                     this.runningStreams.startSubscription(p.StreamID, resp, w.localPort, p.SDP, w.to.ToSlice())
                     for addrport := range w.to {
@@ -399,8 +405,8 @@ func main() {
     }
 
     node := node{
-        probeRequests: utils.EmptySet[int](),
-        probeResponses: make(map[int]positiveResponse),
+        probeRequests: utils.EmptySet[uint32](),
+        probeResponses: make(map[uint32]probeResponse),
         runningStreams: make(streams),
         waitingStreams: make(map[string]*waitingStream),
     }

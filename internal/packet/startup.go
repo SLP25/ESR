@@ -21,3 +21,9 @@ type StartupResponseNode struct {
 	Neighbours map[netip.AddrPort]utils.Metrics
 	Servers []netip.AddrPort
 }
+
+
+type Ping struct {
+	ID uint32
+	//Data []byte 		//to measure error rate (not implemented)
+}

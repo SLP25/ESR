@@ -5,13 +5,13 @@ import "github.com/SLP25/ESR/internal/utils"
 //node -> node
 type ProbeRequest struct {
 	StreamID string
-	RequestID int //random number to identify a request
+	RequestID uint32 //random number to identify a request
 }
 
 //node -> node
 type ProbeResponse struct {
 	StreamID string
-	RequestID int //random number to identify a request
+	RequestID uint32 //random number to identify a request
 	Exists bool
 	Stream utils.StreamMetadata
 }

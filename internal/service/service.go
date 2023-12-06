@@ -64,7 +64,7 @@ func (this *Service) AddUDPServer(port *uint16) error {
 			}
 
 			localPort := netip.MustParseAddrPort(msg.Conn.LocalAddr().String()).Port()
-			slog.Debug("Received UDP message", "addr", msg.Source, "packet", reflect.TypeOf(packet).Name(), "content", utils.Ellipsis(packet, 50))
+			//slog.Debug("Received UDP message", "addr", msg.Source, "packet", reflect.TypeOf(packet).Name(), "content", utils.Ellipsis(packet, 50))
 			this.sigQueue <- UDPMessage{packet: packet, localPort: localPort, addr: msg.Source, conn: msg.Conn}
 		}
 	}()

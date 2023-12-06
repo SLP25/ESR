@@ -13,7 +13,7 @@ import (
 )
 
 
-var tcpPort uint16
+var port uint16 //both tcp (for control msgs) and udp (for pings)
 var bootAddr netip.AddrPort
 var serv service.Service
 
@@ -85,6 +85,13 @@ func (this *server) Handle(sig service.Signal) bool {
             }
         }
         return true
+
+    case service.UDPMessage:
+        msg := sig.(service.UDPMessage)
+        ping, ok := msg.Packet().(packet.Ping)
+        if !ok { return false }
+    
+        utils.Warn(msg.SendResponse(ping))
     }
 
 	return false
@@ -103,21 +110,21 @@ func main() {
         fmt.Println("Invalid port: the port must be an integer between 0 and 65535")
         return
     }
-    tcpPort = uint16(aux)
+    port = uint16(aux)
 
     server := server{streams: make(map[string]*stream)}
     for streamID, filepath := range MustReadConfig(os.Args[2]) {
         metadata, err := start(streamID, filepath, true)
         
         if err != nil {
-            fmt.Printf("Error loading stream '%s': %s", streamID, err)
+            fmt.Printf("Error loading stream '%s': %s\n", streamID, err)
         } else {
             server.streams[streamID] = metadata
         }
     }
 
     serv.AddHandler(&server)
-    err = serv.Run(&tcpPort)
+    err = serv.Run(&port, &port)
     if err != nil {
         slog.Error("Error running service", "err", err)
     }

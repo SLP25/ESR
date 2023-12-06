@@ -23,9 +23,14 @@ type stream struct {
 
 type streams map[string]*stream
 
-func (this streams) startSubscription(streamID string, resp positiveResponse, port uint16, sdp sdp.SessionDescription, children []netip.AddrPort) {
+func (this streams) startSubscription(streamID string, resp probeResponse, port uint16, sdp sdp.SessionDescription, children []netip.AddrPort) {
     if _, ok := this[streamID]; ok {
         slog.Error("startSubscription: called on existing streamID", "streamID", streamID)
+        return
+    }
+
+    if resp.stream == nil {
+        slog.Error("startSubscription: called with negative probe response", "streamID", streamID)
         return
     }
 
@@ -33,7 +38,7 @@ func (this streams) startSubscription(streamID string, resp positiveResponse, po
         from: resp.from,
         toLocal: port,
         to: utils.SetFrom(children...),
-        metadata: resp.stream,
+        metadata: *resp.stream,
         sdp: sdp,
     }
 }

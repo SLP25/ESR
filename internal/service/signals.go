@@ -8,6 +8,7 @@ import (
 	"reflect"
 
 	"github.com/SLP25/ESR/internal/packet"
+	"github.com/SLP25/ESR/internal/utils"
 )
 
 type Signal interface {
@@ -35,7 +36,7 @@ func (this TCPConnected) Addr() netip.AddrPort {
 }
 
 func (this TCPConnected) Send(p packet.Packet) error {
-	slog.Info("Sending TCP message", "packet", reflect.TypeOf(p).Name(), "content", p, "addr", this.conn.RemoteAddr())
+	slog.Info("Sending TCP message", "packet", reflect.TypeOf(p).Name(), "content", utils.Ellipsis(p, 50), "addr", this.conn.RemoteAddr())
 	_, err := packet.Serialize(p, this.conn)
 	return err
 }
@@ -70,7 +71,7 @@ func (this TCPMessage) Addr() netip.AddrPort {
 
 func (this TCPMessage) SendResponse(p packet.Packet) error {
 	_, err := packet.Serialize(p, this.conn)
-	slog.Debug("Sending TCP message", "packet", reflect.TypeOf(p).Name(), "content", p, "addr", this.conn.RemoteAddr())
+	slog.Debug("Sending TCP message", "packet", reflect.TypeOf(p).Name(), "content", utils.Ellipsis(p, 50), "addr", this.conn.RemoteAddr())
 	return err
 }
 
@@ -105,7 +106,7 @@ func (this UDPMessage) SendResponse(p packet.Packet) error {
 	n, err := packet.Serialize(p, buf)
 
 	_, err = this.conn.WriteTo(data[:n], addr{network: "udp", addrport: this.addr})
-	slog.Debug("Sending UDP message", "packet", reflect.TypeOf(p).Name(), "content", p, "addr", this.addr)
+	slog.Debug("Sending UDP message", "packet", reflect.TypeOf(p).Name(), "content", utils.Ellipsis(p, 50), "addr", this.addr)
 	return err
 }
 

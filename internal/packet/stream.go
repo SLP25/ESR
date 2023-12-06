@@ -9,13 +9,13 @@ import (
 //node/client -> node/server
 type StreamRequest struct {
 	StreamID string
-	RequestID int
+	RequestID uint32
 	Port uint16
 }
 
 type StreamResponse struct {
 	StreamID string
-	RequestID int
+	RequestID uint32
 	SDP sdp.SessionDescription
 }
 

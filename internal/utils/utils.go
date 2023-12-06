@@ -1,13 +1,15 @@
 package utils
 
 import (
+	"encoding/binary"
 	"fmt"
 	"log/slog"
+	"math/rand"
 	"net"
 	"net/netip"
 	"os"
 	"strconv"
-	"encoding/binary"
+	"time"
 )
 
 type ServiceType byte
@@ -44,6 +46,9 @@ func Contains[T comparable](list []T, item T) bool {
 	return false
 }
 
+func RandID() uint32 {
+	return rand.New(rand.NewSource(time.Now().UnixNano())).Uint32()
+}
 
 func Ellipsis(val any, maxLen int) string {
 	s := fmt.Sprint(val)

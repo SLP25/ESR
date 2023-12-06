@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"log/slog"
-	"math/rand"
 	"net/netip"
 	"os"
 	"time"
@@ -52,7 +51,7 @@ func (this *client) Handle(sig service.Signal) bool {
             fmt.Println("Access node address received:", this.accessNode)
             fmt.Println("Connecting to access node...")
     
-            randInt := rand.New(rand.NewSource(time.Now().UnixNano())).Int()
+            randInt := utils.RandID()
             req := packet.StreamRequest{StreamID: streamID, RequestID: randInt, Port: udpPort}
             serv.TCPServer().SendConnect(req, this.accessNode)
             
