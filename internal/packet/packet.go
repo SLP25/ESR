@@ -1,8 +1,9 @@
 package packet
 
 import (
+	"bytes"
 	"encoding/binary"
-	"encoding/json"
+	"encoding/gob"
 	"errors"
 	"io"
 	"log/slog"
@@ -50,10 +51,27 @@ func fetchType(name string) reflect.Type {
 	return nil
 }
 
-//TODO: space-efficient marshalling
+func packetToBytes(val Packet) ([]byte, error) {
+	var byteBuffer bytes.Buffer 
+	enc := gob.NewEncoder(&byteBuffer)
+	err := enc.Encode(val)
+
+	if err != nil {
+		return make([]byte, 1), err
+	} else {
+		return byteBuffer.Bytes(), nil
+	}
+}
+
+func bytesToPacket(bt []byte, val any) error {
+	buf := bytes.NewBuffer(bt)
+	dec := gob.NewDecoder(buf)
+
+	return dec.Decode(&val)
+}
 
 func Serialize(val Packet, w io.Writer) (int, error) {
-	b, err := json.Marshal(val)
+	b, err := packetToBytes(val)
     if err != nil {
         slog.Error("Error serializing packet", "err", err)
         return 0, err
@@ -92,7 +110,7 @@ func Deserialize(r io.Reader) (Packet, error) {
 	pType := packet_list[typeCode]
 	val := reflect.New(pType).Interface()
 
-	err = json.Unmarshal(data, val)
+	err = bytesToPacket(data, val)
     if err != nil { return nil, err }
 
 	return reflect.ValueOf(val).Elem().Interface(), nil
