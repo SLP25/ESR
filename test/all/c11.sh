@@ -1,2 +1,2 @@
-sleep 4
+sleep 7
 bin/client $BOOTADDR 1000years
