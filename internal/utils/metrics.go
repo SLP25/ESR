@@ -16,7 +16,7 @@ func (this Metrics) Compose(m Metrics) Metrics {
 }
 
 func (this Metrics) BetterThan(m Metrics) bool {
-	return this.Latency <= m.Latency //TODO
+	return float64(this.Latency.Milliseconds()) + this.PacketLoss * 5000 <= float64(m.Latency.Milliseconds()) + m.PacketLoss * 5000
 }
 
 

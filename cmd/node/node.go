@@ -1,11 +1,13 @@
 package main
 
 import (
+	"fmt"
 	"log/slog"
 	"net/netip"
 	"os"
+	"runtime"
 	"strconv"
-    "runtime"
+	"time"
 
 	"github.com/SLP25/ESR/internal/packet"
 	"github.com/SLP25/ESR/internal/service"
@@ -169,6 +171,8 @@ func (this *node) handleProbeResponse(resp packet.ProbeResponse, source netip.Ad
     
     this.propagateProbeResponse(resp, source)
 
+    //fmt.Println("waitingStreams:", this.waitingStreams[resp.StreamID])
+
     if waitingStream, ok := this.waitingStreams[resp.StreamID]; ok {
         //fmt.Println("ProbeResponse reaction")
 
@@ -201,7 +205,6 @@ func (this *node) handleStreamRequest(streamID string, requestID uint32, dests .
     } else if resp, ok := this.probeResponses[requestID]; ok {
         if resp.stream == nil {
             for _, addrport := range dests {
-                s.to.Add(addrport)
                 utils.Warn(serv.TCPServer().Send(packet.StreamEnd{StreamID: streamID}, addrport.Addr()))
             }
         } else {
@@ -216,19 +219,20 @@ func (this *node) handleStreamRequest(streamID string, requestID uint32, dests .
             }
 
             if this.waitingStreams[streamID].localPort == 0 {
-
-                //fmt.Println("Open a new port and send StreamRequest")
+                //fmt.Println("Open a new port")
 
                 var port uint16
                 serv.AddUDPServer(&port)
                 this.waitingStreams[streamID].localPort = port
+            }
 
-                p := packet.StreamRequest{StreamID: streamID, RequestID: requestID, Port: port}
-                err := serv.TCPServer().Send(p, resp.from)
-                if err != nil {
-                    slog.Error("Unable to propagate StreamRequest", "err", err)
-                    return
-                }
+            //fmt.Println("Open a new port and send StreamRequest")
+
+            p := packet.StreamRequest{StreamID: streamID, RequestID: requestID, Port: this.waitingStreams[streamID].localPort}
+            err := serv.TCPServer().Send(p, resp.from)
+            if err != nil {
+                slog.Error("Unable to propagate StreamRequest", "err", err)
+                return
             }
         }
     } else if !this.probeRequests.Contains(requestID) {
@@ -243,6 +247,17 @@ func (this *node) handleStreamRequest(streamID string, requestID uint32, dests .
         
         req := packet.ProbeRequest{StreamID: streamID, RequestID: requestID}
         this.handleProbeRequest(req, netip.IPv4Unspecified())
+
+        timeout := time.After(2 * time.Second)
+        go func() {
+            <-timeout
+            if _, ok := this.probeResponses[requestID]; !ok {
+                for _, addrport := range dests {
+                    this.cancelStream(streamID, addrport.Addr(), addrport.Port())
+                    utils.Warn(serv.TCPServer().Send(packet.StreamEnd{StreamID: streamID}, addrport.Addr()))
+                }
+            }
+        }()
     }
 }
 
@@ -267,7 +282,6 @@ func (this *node) Handle(sig service.Signal) bool {
             err := serv.TCPServer().Connect(n)
             if err != nil {
                 slog.Warn("Unable to connect to neighbour node", "err", err)
-                //TODO: retry? or wait for them to initiate?
             }
         }
 
@@ -294,7 +308,7 @@ func (this *node) Handle(sig service.Signal) bool {
 
             this.waitingStreams[streamID] = &waiting
             randInt := utils.RandID()
-            //we use goroutines in order to run all requests in parallel (TODO: controlo de concorrencia)
+            //we use goroutines in order to run all requests in parallel
             go this.handleStreamRequest(streamID, randInt, waiting.to.ToSlice()...)
         }
 
@@ -390,20 +404,20 @@ func main() {
     utils.SetupLogging()
 
     if len(os.Args) != 3 {
-        //fmt.Println("Usage: node <port> <bootAddr>")
+        fmt.Println("Usage: node <port> <bootAddr>")
         return
     }
 
     aux, err := strconv.ParseUint(os.Args[1], 10, 16)
     if err != nil {
-        //fmt.Println("Invalid port: the port must be an integer between 0 and 65535")
+        fmt.Println("Invalid port: the port must be an integer between 0 and 65535")
         return
     }
     tcpPort = uint16(aux)
 
     bootAddr, err = netip.ParseAddrPort(os.Args[2])
     if err != nil {
-        //fmt.Println("Invalid boot address:", err)
+        fmt.Println("Invalid boot address:", err)
         return
     }
 

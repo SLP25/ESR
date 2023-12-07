@@ -71,7 +71,7 @@ type metricsMonitor struct {
 }
 
 func (this metricsMonitor) updateMetrics(addr netip.AddrPort) {
-    m, err := measureMetrics(addr, 5, 500 * time.Millisecond)
+    m, err := measureMetrics(addr, 10, 200 * time.Millisecond)
     if err != nil {
         slog.Error("Error updating metrics", "addr", addr, "err", err)
         return
