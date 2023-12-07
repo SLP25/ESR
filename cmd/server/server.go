@@ -92,6 +92,7 @@ func (this *server) Handle(sig service.Signal) bool {
         if !ok { return false }
     
         utils.Warn(msg.SendResponse(ping))
+        return true
     }
 
 	return false
@@ -120,6 +121,7 @@ func main() {
             fmt.Printf("Error loading stream '%s': %s\n", streamID, err)
         } else {
             server.streams[streamID] = metadata
+            fmt.Printf("Hosting stream '%s'\n", streamID)
         }
     }
 

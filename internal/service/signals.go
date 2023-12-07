@@ -101,12 +101,14 @@ func (this UDPMessage) Addr() netip.AddrPort {
 }
 
 func (this UDPMessage) SendResponse(p packet.Packet) error {
-	data := make([]byte, 35600)
-	buf := bytes.NewBuffer(data)
-	n, err := packet.Serialize(p, buf)
+	var buf bytes.Buffer
+	_, err := packet.Serialize(p, &buf)
 
-	_, err = this.conn.WriteTo(data[:n], addr{network: "udp", addrport: this.addr})
-	slog.Debug("Sending UDP message", "packet", reflect.TypeOf(p).Name(), "content", utils.Ellipsis(p, 50), "addr", this.addr)
+	addr, err := net.ResolveUDPAddr("udp", this.addr.String())
+	if err != nil { return err }
+
+	_, err = this.conn.WriteTo(buf.Bytes(), addr)
+	//slog.Debug("Sending UDP message", "packet", reflect.TypeOf(p).Name(), "content", utils.Ellipsis(p, 50), "addr", this.addr)
 	return err
 }
 

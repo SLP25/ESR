@@ -1,7 +1,9 @@
 package utils
 
+import "time"
+
 type Metrics struct {
-	Latency int	//in ms
+	Latency time.Duration	//in ms
 	PacketLoss float64 //from 0 to 1
 	Bandwidth int
 }
@@ -14,7 +16,7 @@ func (this Metrics) Compose(m Metrics) Metrics {
 }
 
 func (this Metrics) BetterThan(m Metrics) bool {
-	return this.Latency <= m.Latency
+	return this.Latency <= m.Latency //TODO
 }
 
 

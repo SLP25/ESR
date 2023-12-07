@@ -29,6 +29,8 @@ var serv service.Service
 type node struct {
     neighbours map[netip.Addr]neighbourInfo
     servers []netip.AddrPort
+    monitor metricsMonitor
+
     probeRequests utils.Set[uint32]                //TODO: erase after a while
     probeResponses map[uint32]probeResponse     //      same here (BUT! cant delete if there is a running/waiting stream)
     runningStreams streams                      //This node is currently receiving and sending packets for these streams
@@ -70,12 +72,10 @@ func (this *node) probeServers(req packet.ProbeRequest) (packet.ProbeResponse, n
     for s, c := range answers {
         resp := (<-c).(service.TCPMessage).Packet().(packet.ProbeResponse)
         if resp.Exists {
-            //TODO: compare metrics
-            //if this.metrics[s].BetterThan(this.metrics[bestServer]) {
-            //    bestServer = s
-            //    bestResponse = resp
-            //}
-            return resp, s.Addr()
+            if this.monitor.GetMetrics(s).BetterThan(this.monitor.GetMetrics(s)) {
+                bestServer = s
+                bestResponse = resp
+            }
         }
     }
 
@@ -271,6 +271,7 @@ func (this *node) Handle(sig service.Signal) bool {
         }
 
         this.servers = response.Servers
+        this.monitor = this.monitorMetrics(this.servers)
         return true
 
     case service.TCPDisconnected:

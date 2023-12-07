@@ -1,0 +1,41 @@
+package utils
+
+import (
+	"time"
+)
+
+const logDuration = 200 * time.Millisecond
+var events map[string]*resettableTimer = EmptySet[string]()
+
+
+type resettableTimer chan<- struct{}
+
+func (this *resettableTimer) reset() {
+	if *this != nil {
+		*this <- struct{}{}
+	} else {
+		this = nil //TODO
+	}
+}
+
+func newResettableTimer(dur time.Duration, callback func()) *resettableTimer {
+	aux := make(chan struct{})
+	ans := &aux
+
+	go func() {
+		select {
+			case <-time.After(dur):
+				callback()
+				aux = nil
+			case <-aux:
+
+		}
+	}()
+
+	return ans
+}
+
+
+func ConsecLog(event string) {
+
+}

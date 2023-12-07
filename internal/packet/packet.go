@@ -20,6 +20,7 @@ var packet_list = []reflect.Type{
 
 	reflect.TypeOf(ProbeRequest{}),
 	reflect.TypeOf(ProbeResponse{}),
+	reflect.TypeOf(Ping{}),
 	
 	reflect.TypeOf(StreamRequest{}),
 	reflect.TypeOf(StreamResponse{}),

@@ -1,6 +1,7 @@
 package service
 
 import (
+	"bytes"
 	"errors"
 	"log/slog"
 	"net"
@@ -22,7 +23,7 @@ type UDPServer struct {
 	closed bool
 }
 
-// Sends a packet to specified remote address
+// Sends a packet from an arbitrary port to specified remote address
 func SendUDP(p packet.Packet, address netip.AddrPort) error {
 	//slog.Debug("Sending UDP message", "packet", reflect.TypeOf(p).Name(), "content", utils.Ellipsis(p, 50), "addr", address)
 	
@@ -64,6 +65,18 @@ func (this *UDPServer) Close() error {
 	} else {
 		return nil
 	}
+}
+
+func (this *UDPServer) Send(p packet.Packet, address netip.AddrPort) error {
+	var buf bytes.Buffer
+	_, err := packet.Serialize(p, &buf)
+
+	addr, err := net.ResolveUDPAddr("udp", address.String())
+	if err != nil { return err }
+
+	_, err = this.conn.WriteTo(buf.Bytes(), addr)
+	//slog.Debug("Sending UDP message", "packet", reflect.TypeOf(p).Name(), "content", utils.Ellipsis(p, 50), "addr", address)
+	return err
 }
 
 func (this *UDPServer) Output() chan UDPPacket {

@@ -27,3 +27,7 @@ type Ping struct {
 	ID uint32
 	//Data []byte 		//to measure error rate (not implemented)
 }
+
+func NewPing() Ping {
+	return Ping{ID: utils.RandID()}
+}
