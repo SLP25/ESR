@@ -6,7 +6,6 @@ import (
 	"os"
 	"strconv"
     "runtime"
-    
 
 	"github.com/SLP25/ESR/internal/packet"
 	"github.com/SLP25/ESR/internal/service"
@@ -197,7 +196,7 @@ func (this *node) handleStreamRequest(streamID string, requestID uint32, dests .
     if s, ok := this.runningStreams[streamID]; ok {
         for _, addrport := range dests {
             s.to.Add(addrport)
-            utils.Warn(serv.TCPServer().Send(packet.StreamResponse{SDP: s.sdp}, addrport.Addr()))
+            utils.Warn(serv.TCPServer().Send(packet.StreamResponse{SDP: s.sdp,StreamID:streamID,RequestID:requestID}, addrport.Addr()))
         }
     } else if resp, ok := this.probeResponses[requestID]; ok {
         if resp.stream == nil {
