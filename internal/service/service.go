@@ -25,12 +25,13 @@ type handlerNode struct {
 
 type Service struct {
 	handlers []*handlerNode
+	pauseMutex sync.Mutex
+	pauseCond *sync.Cond
+	paused int
 	handlersMutex sync.Mutex
 	udpServers map[uint16]*UDPServer
 	tcpServer TCPServer
 	sigQueue chan Signal
-	paused sync.WaitGroup
-	handling sync.WaitGroup
 	closed bool
 	closing sync.Mutex
 }
@@ -107,16 +108,21 @@ func (this *Service) Run(tcpPort *uint16, udpPorts... *uint16) error {
 		err := this.AddUDPServer(port)
 		if err != nil { return err }
 	}
-	
+	this.pauseCond = sync.NewCond(&this.pauseMutex)
+	//this.handling.Add(1)
 	go this.handle(Init{})
 
 	for sig := range this.sigQueue {
-		this.paused.Wait()
+		// this.paused.Wait()
+		this.pauseMutex.Lock()
+		for this.paused>0 {this.pauseCond.Wait()}
+		this.pauseMutex.Unlock()
+		// this.handling.Add(1)
 		go this.handle(sig)
 	}
-
+	//this.handling.Add(1)
 	this.handle(Closing{})
-	this.handling.Wait()
+	//this.handling.Wait()
 	return nil
 }
 
@@ -161,20 +167,34 @@ func (this *Service) RemoveHandler(h Handler) bool {
 
 //blocks future calls to service.handle() until the function returns
 func (this *Service) PauseHandleWhile(f func()) {
-	this.paused.Add(1)
-	defer this.paused.Add(-1)
+	//this.paused.Add(1)
+	//defer this.paused.Done()
+	this.pauseMutex.Lock()
+	this.paused++
+	this.pauseMutex.Unlock()
 	f()
+	this.pauseMutex.Lock()
+	this.paused--
+	this.pauseMutex.Unlock()
+	this.pauseCond.Signal()
 }
 
 func PauseHandleWhile[T any](this *Service, f func() T) T {
-	this.paused.Add(1)
-	defer this.paused.Add(-1)
-	return f()
+	//this.paused.Add(1)
+	//defer this.paused.Done()
+	this.pauseMutex.Lock()
+	this.paused++
+	this.pauseMutex.Unlock()
+	t := f()
+	this.pauseMutex.Lock()
+	this.paused--
+	this.pauseMutex.Unlock()
+	this.pauseCond.Signal()
+	return t
 }
 
 func (this *Service) handle(sig Signal) {
-	this.handling.Add(1)
-	defer this.handling.Add(-1)
+	//defer this.handling.Done()
 
 	this.handlersMutex.Lock()
 	handlers := make([]*handlerNode, len(this.handlers))

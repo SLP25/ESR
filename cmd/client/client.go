@@ -45,7 +45,6 @@ func (this *client) Handle(sig service.Signal) bool {
 
         var streamEnd chan packet.StreamEnd
         var servClosing <-chan service.Closing
-
         serv.PauseHandleWhile(func() {
             this.accessNode = response.ConnectTo
             fmt.Println("Access node address received:", this.accessNode)

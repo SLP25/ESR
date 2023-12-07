@@ -14,27 +14,27 @@
     "edges": [
         {
             "n1":"n2",
-            "throughput": 1000
+            "Bandwidth": 1000000000
         },
         {
             "n1":"n5",
-            "throughput": 1000
+            "Bandwidth": 1000000000
         },
         {
             "n2":"n5",
-            "throughput": 1000
+            "Bandwidth": 1000000000
         },
         {
             "n2":"n6",
-            "throughput": 1
+            "Bandwidth": 10000
         },
         {
             "n2":"lost",
-            "throughput": 1000
+            "Bandwidth": 1000000000
         },
         {
             "n5":"n6",
-            "throughput": 1000
+            "Bandwidth": 1000000000
         }
     ],
     

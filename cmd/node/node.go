@@ -5,6 +5,7 @@ import (
 	"net/netip"
 	"os"
 	"strconv"
+    "runtime"
 
 	"github.com/SLP25/ESR/internal/packet"
 	"github.com/SLP25/ESR/internal/service"
@@ -45,7 +46,6 @@ func (this *node) isRP() bool {
 //Returns the positive response from the server with the best connection metrics
 func (this *node) probeServers(req packet.ProbeRequest) (packet.ProbeResponse, netip.Addr) {
     answers := make(map[netip.AddrPort]<-chan service.Signal)
-    
     for _, s := range this.servers {
         serv.PauseHandleWhile(func() {
             err := serv.TCPServer().SendConnect(req, s)
@@ -53,15 +53,15 @@ func (this *node) probeServers(req packet.ProbeRequest) (packet.ProbeResponse, n
                 slog.Warn("Unable to connect to server", "addr", s, "err", err)
                 return
             }
-
-            answers[s] = service.Intercept(&serv, func(sig service.Signal) bool {
+            st := s
+            answers[st] = service.Intercept(&serv, func(sig service.Signal) bool {
                 msg, ok := sig.(service.TCPMessage)
                 if !ok { return false }
                 
                 resp, ok := msg.Packet().(packet.ProbeResponse)
                 if !ok { return false }
 
-                return msg.Addr().Addr() == s.Addr() && resp.RequestID == req.RequestID
+                return msg.Addr().Addr() == st.Addr() && resp.RequestID == req.RequestID
             }, 1)
         })
     }
@@ -71,6 +71,7 @@ func (this *node) probeServers(req packet.ProbeRequest) (packet.ProbeResponse, n
 
     for s, c := range answers {
         resp := (<-c).(service.TCPMessage).Packet().(packet.ProbeResponse)
+
         if resp.Exists {
             if this.monitor.GetMetrics(s).BetterThan(this.monitor.GetMetrics(s)) {
                 bestServer = s
@@ -195,7 +196,7 @@ func (this *node) handleStreamRequest(streamID string, requestID uint32, dests .
     if s, ok := this.runningStreams[streamID]; ok {
         for _, addrport := range dests {
             s.to.Add(addrport)
-            utils.Warn(serv.TCPServer().Send(packet.StreamResponse{SDP: s.sdp}, addrport.Addr()))
+            utils.Warn(serv.TCPServer().Send(packet.StreamResponse{SDP: s.sdp,StreamID:streamID,RequestID:requestID}, addrport.Addr()))
         }
     } else if resp, ok := this.probeResponses[requestID]; ok {
         if resp.stream == nil {
@@ -385,6 +386,7 @@ func (this *node) Handle(sig service.Signal) bool {
 }
 
 func main() {
+    runtime.GOMAXPROCS(1)
     utils.SetupLogging()
 
     if len(os.Args) != 3 {
